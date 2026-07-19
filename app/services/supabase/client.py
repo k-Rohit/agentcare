@@ -1,4 +1,4 @@
-from supabase import create_client, Client
+from supabase import create_client, Client,SupabaseException
 from config import Settings, get_settings
 
 class SupabaseClient:
@@ -9,5 +9,8 @@ class SupabaseClient:
         self.supabase_service_role_key = config.supabase_service_role_key
 
     def connect_to_supabase(self) -> Client:
-        return create_client(self.supabase_url, self.supabase_service_role_key)
+        try:
+            return create_client(self.supabase_url, self.supabase_service_role_key)
+        except SupabaseException as e:
+            raise RuntimeError(f"Failed to initialize Supabase client: {e}") from e
 
