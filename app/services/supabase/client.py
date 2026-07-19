@@ -1,12 +1,13 @@
-import os
-import sys
 from supabase import create_client, Client
-sys.path.append("")
-from config import get_settings
+from config import Settings, get_settings
 
-supabase: Client = create_client(
-    url=get_settings().supabase_url,
-    key=get_settings().supabase_publishable_key,
-)
+class SupabaseClient:
+    def __init__(self, config: Settings | None = None):
+        config = config or get_settings()
+        self.supabase_url = config.supabase_url
+        self.supabase_publishable_key = config.supabase_publishable_key
+        self.supabase_service_role_key = config.supabase_service_role_key
 
-print(supabase.table("users").select("*").execute())
+    def connect_to_supabase(self) -> Client:
+        return create_client(self.supabase_url, self.supabase_service_role_key)
+

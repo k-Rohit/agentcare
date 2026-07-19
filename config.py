@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_publishable_key: str
     supabase_service_role_key: str
-    anthropic_api_key: str
+    openai_api_key: str
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
