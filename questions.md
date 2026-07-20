@@ -52,6 +52,17 @@ No — RLS-enabled-with-no-policies only locks out the `publishable` key (deny b
 
 ---
 
+**Q: There seem to be three keys floating around — publishable, anon, service_role, secret. What's the actual difference?**
+
+Only two keys exist, not three or four — Supabase just renamed both of them at some point, so old and new names show up mixed together:
+
+- `anon` and `publishable` are the *same key*, just renamed. This is the public-safe one — fine to expose in a browser. Its access is governed entirely by RLS (currently locked out of every table, since RLS is on with no policies). The only thing this project uses it for is Auth calls (signup/login) — those requests come from someone who isn't logged in yet, so there's no alternative.
+- `service_role` and `secret` are the *same key*, also just renamed. This is the privileged one — full access, bypasses RLS entirely, must never appear anywhere a browser could see it. Every table query in this backend, and every Admin API call (`create_user`, `update_user_by_id`, etc.), uses this key exclusively.
+
+The simple rule: anything simulating "what a browser/frontend would do" (every login/signup `curl` we've run) → publishable/anon. Anything that's "our backend doing something" → service_role/secret, always. The two never mix in this codebase.
+
+---
+
 **Q: Does `create_client(url, key)` actually connect to Supabase when it's called?**
 
 No. It's a local, synchronous call that just builds a configured object (base URL + key stored as headers) — no network request happens. Proven by calling it against a completely unresolvable fake hostname: it returned instantly with no error. The first real network call happens later, the moment you call something like `.table(...).execute()`.
