@@ -76,6 +76,12 @@ Backend, exclusively. `require_role(...)` is a FastAPI dependency that runs *bef
 
 ---
 
+**Q: Why does `/register-doctor` return `{"user_id": ..., "temporary_password": ...}` in the response?**
+
+Because of the account-creation flow we chose (admin sets a temp password, not an email invite), the response is the *only* place that password ever exists. It's never saved to `profiles`, never written to `audit_events`, never logged — so if it weren't returned here, it would vanish the instant the function finished, and the new doctor account would be permanently unusable (no password anyone knows, and no "forgot password" recovery built). The admin is expected to copy it once, from this response, and hand it off out of band — not store it anywhere themselves either. `user_id` is returned separately just so the caller knows which account was created.
+
+---
+
 ## Python Imports & Running Modules
 
 **Q: What's the actual difference between `python some/file.py` and `python -m some.dotted.path`?**
