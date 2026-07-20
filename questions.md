@@ -73,3 +73,38 @@ The JWT proves *identity* (who successfully logged in) — it doesn't carry your
 **Q: Where does the actual RBAC enforcement happen — frontend or backend?**
 
 Backend, exclusively. `require_role(...)` is a FastAPI dependency that runs *before* a route's own code, on the server, checking the database-backed role on every single request — regardless of what any frontend button does or doesn't show.
+
+---
+
+## Python Imports & Running Modules
+
+**Q: What's the actual difference between `python some/file.py` and `python -m some.dotted.path`?**
+
+They're two completely different ways of telling Python where to find code, not two spellings of the same thing.
+
+- `-m some.dotted.path` is a *mailing address*, written from one fixed reference point (your project root). Python starts at your current folder, then walks down through it using the dots as folder separators, expecting to find `some/dotted/path.py`. This only works if you run it *from the project root* — that's the fixed point the address assumes.
+- `python some/file.py` hands Python one loose sheet of paper and says "just run this." Python opens that single file in isolation — it has no idea the file is part of a bigger package (`app`, with folders like `services`, `supabase` inside it). So any line in that file saying "import something from `app.xyz`" fails, because as far as this mode is concerned, there is no `app` — just the one file.
+
+---
+
+**Q: Why does `-m` use dots and no `.py`, while running a file directly uses slashes and `.py`?**
+
+Because they're not the same kind of input. A file path (`app/services/supabase/factory.py`) describes a location on disk. A dotted module path (`app.services.supabase.factory`) describes a position in Python's *package* system — which happens to mirror the folder structure, but is resolved differently (by searching `sys.path`, matching folders that are packages), not by opening a literal disk path.
+
+---
+
+**Q: When can I use relative imports (`.` / `..`) and when can't I?**
+
+Relative imports mean "relative to my own package location" — `.` = same folder, `..` = one folder up. They only make sense if Python already knows it's standing *inside* a package, which only happens when a file is reached via a real dotted address (`-m`, or by being imported by something else that was itself launched that way). If you try to run a file that uses `.`/`..` directly — even with `-m`, if it's the literal thing you're running as the entry point — Python often still resolves it fine when invoked correctly via `-m` from the root; but running it as a bare file path (`python some/file.py`) will fail immediately with "attempted relative import with no known parent package," no matter what directory you're standing in.
+
+---
+
+**Q: Why did `from config import get_settings` work from `client.py`, but the same style of unqualified import failed elsewhere?**
+
+It only worked because `config.py` sits at the project root, and Python automatically adds the current working directory to its search path when you run something with `-m` from that same root. It was never a general solution — it happened to work for one specific file location (the root) and broke the moment a file lived somewhere else (e.g. three folders deep in `services/supabase/`). This is exactly why absolute imports (`from app.services.supabase.factory import ...`) are more robust than unqualified ones: they don't depend on which folder happens to be "current."
+
+---
+
+**Q: What's the one rule that avoids almost all of this confusion?**
+
+Use full dotted imports everywhere (`from app.services.supabase.factory import ...`), never relative (`.`/`..`), for any file you might want to run directly. Always run things with `uv run python -m <dotted.path>` from the repo root — never a file path, never a `.py` extension on the command line.

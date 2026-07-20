@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.139.2",
     "langchain-core>=1.4.9",
     "langgraph>=1.2.9",
+    "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
     "supabase>=2.31.0",
