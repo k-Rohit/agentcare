@@ -108,7 +108,6 @@ def book_appointment(patient_id: str, slot_id: str, department_id: str, reason: 
     logger.info(f"Successfully booked appointment for patient {patient_id} in department {department_name} for slot {slot_id}")
     return response.data[0]
 
-
 def get_appointment_details(appointment_id: str) -> dict | None:
     """Get a patient-facing view of an appointment, with the doctor's name and actual time.
 
@@ -141,7 +140,6 @@ def get_appointment_details(appointment_id: str) -> dict | None:
         raise RuntimeError(f"Failed to fetch appointment details for {appointment_id}: {e}") from e
     return response.data[0] if response.data else None
 
-
 def get_patient_appointments(patient_id: str) -> list[dict]:
     """List every appointment a patient has, with doctor name and actual time.
 
@@ -169,7 +167,6 @@ def get_patient_appointments(patient_id: str) -> list[dict]:
     except APIError as e:
         raise RuntimeError(f"Failed to fetch appointments for patient {patient_id}: {e}") from e
     return response.data
-
 
 def create_appointment_slot(doctor_id: str, start_time: str, end_time: str) -> dict:
     """Add a new open slot to a doctor's calendar.
