@@ -125,3 +125,76 @@ It only worked because `config.py` sits at the project root, and Python automati
 **Q: What's the one rule that avoids almost all of this confusion?**
 
 Use full dotted imports everywhere (`from app.services.supabase.factory import ...`), never relative (`.`/`..`), for any file you might want to run directly. Always run things with `uv run python -m <dotted.path>` from the repo root — never a file path, never a `.py` extension on the command line.
+
+---
+
+## Tools, Data Shapes & Testing
+
+**Q: What does `response.data` actually look like after a Supabase query?**
+
+For a normal query (no `.single()`), it's a **list of dicts**, one per row, keys matching the columns you selected — an empty list `[]` if nothing matched, not `None`. `.single()` is different: it's a promise ("I'm certain exactly one row exists"), so it unwraps to one dict directly — but if that promise turns out wrong (zero rows), it doesn't return `None`, it **raises `APIError`** immediately. This actually broke real code once: `auth.py` had `if not profile.data:` after a `.single()` call, which could never run for the "no profile" case, since the exception fired before that line was ever reached. Fixed by wrapping the `.single()` call in `try/except APIError` instead of checking the result afterward.
+
+---
+
+**Q: In `get_available_slots`, why collect *all* doctor ids in a department instead of just one?**
+
+A department can have multiple doctors. An earlier draft grabbed only `response.data[0]["id"]` (the first doctor found) and queried slots for just that one — silently making every other doctor's availability invisible. The fix: collect every active doctor's id into a list, then use `.in_("doctor_id", doctor_ids)` to fetch slots across all of them in one query.
+
+---
+
+**Q: In `book_appointment`, how does the code know which doctor to book — does it choose one?**
+
+It never chooses — the doctor comes for free with whichever slot is picked, since every slot belongs to exactly one doctor already. An earlier draft tried `random.choice()` on what it thought was a list of doctors, but was actually a single doctor-id *string* — `random.choice()` on a string picks a random **character**, not a valid id at all. The fix: find the matching slot dict for the given `slot_id` in the already-fetched `available_slots` list, and read `doctor_id` straight off of it.
+
+---
+
+**Q: What actually stops two people from booking the same appointment slot at the same instant?**
+
+A real database constraint, not application logic: `appointments.slot_id` has a `unique` constraint. If two bookings race, the second `insert` fails outright with `APIError` regardless of any "check if available" logic in Python — because a check-then-act pattern alone can't close that race window, only a DB-level guarantee can. `book_appointment` just needs to catch that failure cleanly, not prevent the race itself.
+
+---
+
+**Q: Why doesn't `book_appointment` set a start/end time on the appointment?**
+
+Because `appointments` has no `start_time`/`end_time` columns at all — that data lives entirely on `appointment_slots`, found via `slot_id`. The slot's time gets fixed once, when the slot itself is created (`create_appointment_slot`, a doctor/staff action), never by the booking step.
+
+---
+
+**Q: What do `get_appointment_details`/`get_patient_appointments` return, given they show the doctor's name and slot time — where does that come from?**
+
+PostgREST's relationship-embedding: `.select("id, status, doctors(name), appointment_slots(start_time, end_time)")` joins across the foreign keys in one query. Confirmed empirically that the embedded keys are the **table names** (`"doctors"`, `"appointment_slots"`), not singular aliases — e.g. `{"doctors": {"name": "Dr. Sharma"}, "appointment_slots": {"start_time": "...", "end_time": "..."}}`.
+
+---
+
+**Q: Is the overlap check in `create_appointment_slot` as airtight as the booking unique constraint?**
+
+No, and that's a known, accepted limitation — it's a "look, then insert" check (query for overlapping slots, then insert if none found), which has a small race-condition window, unlike `book_appointment`'s unique-constraint backstop. A fully airtight version would need a Postgres `EXCLUDE` constraint on the time range. For a doctor/staff member manually adding one slot at a time, the practical risk is negligible — but it's not the same category of guarantee as the booking case.
+
+---
+
+**Q: Where do the actual document files get stored — is `file_path` the file itself?**
+
+No, `file_path` is only a pointer. Actual file bytes live in **Supabase Storage**, in a private bucket (`patient-documents`, `public: false`, created via a migration so it's reproducible like everything else). `upload_document` puts the real bytes there and returns the storage path; `store_document` only ever saves that path as metadata. Viewing a file later requires `get_document_url`, which generates a temporary signed URL — there's no permanent public link, since the bucket is private.
+
+---
+
+**Q: Does the agent decide the `file_path` passed into `store_document`?**
+
+No — it's mechanically produced by `upload_document` (`f"{patient_id}/{filename}"`) and just relayed forward. The two calls always happen together, in order: `upload_document` first (to get a real path pointing at real uploaded bytes), then `store_document` with that exact path. An agent-invented path with no matching upload would make `get_document_url` fail later with "file not found."
+
+---
+
+## Agent Architecture
+
+**Q: If there are no subgraphs, how does the Coordinator "delegate to specialized agents, combine outputs, track completion/failure"?**
+
+Each part is satisfied differently than a literal "coordinator manually calls each agent" pattern would suggest:
+- **Delegates** — the graph's edges *are* the delegation, defined once when wiring the `StateGraph`; LangGraph's runtime invokes each node in sequence, not the Coordinator's own code.
+- **Combines outputs** — automatic, because every node reads/writes the *same* shared state the whole time; nothing was ever separate, so there's nothing to combine after the fact.
+- **Tracks completion/failure** — a `try/except` wrapped around the whole graph invocation at the call site (catches any node's failure), plus the conditional edges already built for Safety/Routing to route to "escalate" instead of continuing.
+
+---
+
+**Q: When do you actually need a LangGraph subgraph instead of a plain node function?**
+
+Only when *one agent's own internal logic* needs real multi-step branching or an open-ended loop — not just "does more than one thing in sequence." Concretely: genuine ReAct-style looping (try a tool, evaluate, decide whether to retry, repeat an unknown number of times), needing a human-in-the-loop pause *inside* one agent's reasoning (not just between agents), reusing the same multi-step logic as a self-contained unit across different parent graphs, or an "agent" that's actually a small multi-agent system itself. None of AgentCare's six agents need this — each is one LLM call plus a couple of fixed tool calls, fully expressible as a plain function.
