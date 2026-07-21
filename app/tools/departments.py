@@ -60,3 +60,30 @@ def get_department_by_name(name: str) -> dict | None:
     except APIError as e:
         raise RuntimeError(f"Failed to look up department '{name}': {e}") from e
     return response.data[0] if response.data else None
+
+def get_department_name(department_id: str) -> str | None:
+    """Look up one active department's name by its id.
+
+    Use this after you've already decided which department a request belongs
+    to (e.g. from get_departments), to get the real department name needed for
+    further steps like finding doctors in that department. 
+
+    Args:
+        department_id: The department id to look up, e.g. "uuid". Should be a
+            id that appeared in the list returned by get_departments.
+
+    Returns:
+        A string shaped like "Cardiology" if an active department with that id exists, otherwise None.
+    """
+    client = get_supabase_client()
+    try:
+        response = (
+            client.table("departments")
+            .select("name")
+            .eq("active", True)
+            .eq("id", department_id)
+            .execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to look up department '{department_id}': {e}") from e
+    return response.data[0]["name"] if response.data else None
