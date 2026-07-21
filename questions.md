@@ -198,3 +198,41 @@ Each part is satisfied differently than a literal "coordinator manually calls ea
 **Q: When do you actually need a LangGraph subgraph instead of a plain node function?**
 
 Only when *one agent's own internal logic* needs real multi-step branching or an open-ended loop — not just "does more than one thing in sequence." Concretely: genuine ReAct-style looping (try a tool, evaluate, decide whether to retry, repeat an unknown number of times), needing a human-in-the-loop pause *inside* one agent's reasoning (not just between agents), reusing the same multi-step logic as a self-contained unit across different parent graphs, or an "agent" that's actually a small multi-agent system itself. None of AgentCare's six agents need this — each is one LLM call plus a couple of fixed tool calls, fully expressible as a plain function.
+
+---
+
+## Tool Calling — What the LLM Actually Does
+
+**Q: Does the LLM execute the function when it "calls a tool"?**
+
+No — it can't. An LLM is a text model with no interpreter, no database connection, no filesystem. What it actually does is *decide* and *emit a structured request*: "I want `escalate_request` called with `reason='...'`". That request (`response.tool_calls`) is not a call — nothing has run, nothing is in the database yet. Something else in your process has to read that request and actually run the function. The LLM's genuine job is the judgment (which tool, what arguments); the execution is always done by code, never the model.
+
+---
+
+**Q: Then why does my code have the line `escalate_request(**call["args"])` — isn't that me overriding the LLM?**
+
+The opposite — it's *honoring* the LLM's decision. The LLM said "please call escalate_request with this reason"; that line is the code obeying it. Analogy: the LLM is a doctor writing a prescription (the decision), and this line is the nurse administering it (the execution). The doctor made the call; they just don't have hands in the pharmacy. `if call["name"] == "escalate_request"` means "the model chose escalation, so now run what it chose" — if it had chosen `RoutingDecision` instead, the other branch runs.
+
+---
+
+**Q: But in my MCP expense tracker, I just gave Claude instructions and it executed them — no manual code. How?**
+
+The same two-party thing happened; the second half was just invisible. When you said "add a ₹500 expense," (1) Claude *decided* and emitted a tool-call request — and stopped there. (2) **Claude Desktop (the MCP host)** — a separate program — received that request and actually executed `create_expense` against your MCP server. (3) The result went back to Claude. (4) Claude wrote you a friendly confirmation. You only saw steps 1 and 4, so it felt direct — but the host was the "nurse" doing the execution. MCP is literally a protocol for that hand-off. In a hand-built LangChain/LangGraph app, *you* are the host, which is why you write the execution line yourself.
+
+---
+
+**Q: `ToolNode`, tool, function calling, tool calling — are these all different things?**
+
+Two of them are the same; the rest are different layers:
+- **function calling = tool calling** — identical, just renamed over time (OpenAI's old name vs. the current name). This is the *model's capability* to request a call instead of replying with plain text.
+- **tool** — the actual function being called (e.g. `search_tool`, `escalate_request`). Just a function with a name/docstring/typed args so the model knows how to request it.
+- **ToolNode** — one specific LangGraph class that *executes* the tool-call requests and loops results back. It's the pre-written "nurse." Runs in your process, not the model — it didn't move execution into the LLM, it just saved you from hand-writing the dispatch loop.
+- **bind_tools** — the step that tells the model *which tools exist* ("here's the menu"). Doesn't execute anything, doesn't force a call.
+
+In one line: `bind_tools` = here's the menu; tool calling = model orders off it; a tool = the dish ordered; `ToolNode` = the kitchen that actually makes it. The "executor" slot (ToolNode / hand-written dispatch / an MCP host) is interchangeable.
+
+---
+
+**Q: Why does `routing.py` dispatch tools manually instead of using `ToolNode`?**
+
+Two reasons specific to routing. (1) `ToolNode`'s pattern is a *loop* — execute tool, feed result back to the LLM, keep reasoning (`tools → chat_node`). Routing isn't a loop; it makes one decision and the graph should then *branch differently* based on which tool was chosen (`escalate_request` → end as escalated; `RoutingDecision` → go to appointment) and map results into state fields like `department`/`delegated_to` — none of which `ToolNode` does. (2) `RoutingDecision` isn't an executable tool anyway — it has no side effect, it's structured output wearing a tool's clothes so the model can pick between "decide" and "escalate." `ToolNode` genuinely fits where there's a real ReAct loop with side-effecting tools whose results feed back — which is exactly what the Appointment Agent will be, so it belongs there, not here.

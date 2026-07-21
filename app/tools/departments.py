@@ -61,6 +61,7 @@ def get_department_by_name(name: str) -> dict | None:
         raise RuntimeError(f"Failed to look up department '{name}': {e}") from e
     return response.data[0] if response.data else None
 
+
 def get_department_name(department_id: str) -> str | None:
     """Look up one active department's name by its id.
 
