@@ -6,6 +6,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Shared select shape for any query that returns an appointment for display
+# to a patient — includes the doctor's name and the slot's actual time,
+# neither of which live on the raw appointments row.
+PATIENT_FACING_APPOINTMENT_FIELDS = "id, status, reason, doctors(name), appointment_slots(start_time, end_time)"
+
 def get_available_slots(department_id: str) -> list[dict | None]:
     """List open appointment slots for doctors in a given department.
 
@@ -101,4 +106,124 @@ def book_appointment(patient_id: str, slot_id: str, department_id: str, reason: 
     client.table("appointment_slots").update({"status": "booked"}).eq("id", slot_id).execute()
 
     logger.info(f"Successfully booked appointment for patient {patient_id} in department {department_name} for slot {slot_id}")
+    return response.data[0]
+
+
+def get_appointment_details(appointment_id: str) -> dict | None:
+    """Get a patient-facing view of an appointment, with the doctor's name and actual time.
+
+    Use this right after book_appointment succeeds, to build a confirmation
+    message, or whenever showing a patient their appointment status. The raw
+    appointments row only has ids (doctor_id, slot_id) — nothing a patient
+    would recognize — so always use this instead of the raw row when
+    displaying anything to a human.
+
+    Args:
+        appointment_id: The appointments.id to look up (e.g. from
+            book_appointment's return value).
+
+    Returns:
+        A dict shaped like:
+        {"id": "...", "status": "confirmed", "reason": "...",
+         "doctors": {"name": "Dr. Sharma"},
+         "appointment_slots": {"start_time": "...", "end_time": "..."}}
+        or None if no appointment with that id exists.
+    """
+    client = get_supabase_client()
+    try:
+        response = (
+            client.table("appointments")
+            .select(PATIENT_FACING_APPOINTMENT_FIELDS)
+            .eq("id", appointment_id)
+            .execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to fetch appointment details for {appointment_id}: {e}") from e
+    return response.data[0] if response.data else None
+
+
+def get_patient_appointments(patient_id: str) -> list[dict]:
+    """List every appointment a patient has, with doctor name and actual time.
+
+    Use this to show a patient their appointment history/status, or to check
+    for existing appointments before booking a new one.
+
+    Args:
+        patient_id: The patient's id (patient_profiles.id, not user_id).
+
+    Returns:
+        A list of dicts, each shaped like:
+        {"id": "...", "status": "confirmed", "reason": "...",
+         "doctors": {"name": "Dr. Sharma"},
+         "appointment_slots": {"start_time": "...", "end_time": "..."}}
+        Empty list if the patient has no appointments at all.
+    """
+    client = get_supabase_client()
+    try:
+        response = (
+            client.table("appointments")
+            .select(PATIENT_FACING_APPOINTMENT_FIELDS)
+            .eq("patient_id", patient_id)
+            .execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to fetch appointments for patient {patient_id}: {e}") from e
+    return response.data
+
+
+def create_appointment_slot(doctor_id: str, start_time: str, end_time: str) -> dict:
+    """Add a new open slot to a doctor's calendar.
+
+    Use this when a doctor or staff member is adding availability — this is
+    a doctor/staff-facing action, not something a patient's request should
+    ever trigger directly. Rejects the new slot if it overlaps any of this
+    doctor's existing non-cancelled slots (a cancelled slot frees up that
+    time again, so it doesn't block a new one from being created there).
+
+    Args:
+        doctor_id: The doctor this slot belongs to (doctors.id).
+        start_time: ISO 8601 timestamp, e.g. "2026-08-01T10:00:00+00:00".
+        end_time: ISO 8601 timestamp, must be strictly after start_time.
+
+    Returns:
+        The newly created appointment_slots row as a dict, with status="available".
+
+    Raises:
+        ValueError: If the new slot overlaps an existing available/booked
+            slot for the same doctor.
+        RuntimeError: If the insert fails for a database reason — e.g.
+            end_time not after start_time, or doctor_id doesn't exist.
+    """
+    client = get_supabase_client()
+
+    # Two ranges [start1, end1) and [start2, end2) overlap exactly when
+    # start1 < end2 AND start2 < end1 — so find any existing slot for this
+    # doctor where that holds against the new slot's own start/end.
+    try:
+        overlapping = (
+            client.table("appointment_slots")
+            .select("id")
+            .eq("doctor_id", doctor_id)
+            .neq("status", "cancelled")
+            .lt("start_time", end_time)
+            .gt("end_time", start_time)
+            .execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to check for overlapping slots for doctor {doctor_id}: {e}") from e
+
+    if overlapping.data:
+        raise ValueError(
+            f"This slot overlaps with an existing slot for this doctor "
+            f"({len(overlapping.data)} conflicting slot(s) found)."
+        )
+
+    try:
+        response = client.table("appointment_slots").insert({
+            "doctor_id": doctor_id,
+            "start_time": start_time,
+            "end_time": end_time,
+        }).execute()
+    except APIError as e:
+        raise RuntimeError(f"Failed to create appointment slot for doctor {doctor_id}: {e}") from e
     return response.data[0]
