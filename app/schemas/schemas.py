@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 class CreateDoctorRequest(BaseModel):
@@ -17,3 +19,12 @@ class CreatePatientRequest(BaseModel):
     phone: str
     preferred_language: str
     emergency_contact: str
+
+class RequestIntent(BaseModel):
+    intent_type: Literal["booking", "document", "status_check", "other"]
+    summary: str
+
+class RoutingResponse(BaseModel):
+    routed_department: str
+    summary: str
+    esclation_required: str
