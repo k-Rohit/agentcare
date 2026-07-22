@@ -25,7 +25,8 @@ from config import get_settings
 
 
 def select_appointment_slot(options: list[dict]) -> str:
-    """Present the available slots to the patient and pause for their choice.
+    """
+    Present the available slots to the patient and pause for their choice.
 
     Call this AFTER get_available_slots, BY ITSELF (not alongside any other
     tool call), passing the open slots as a list of
