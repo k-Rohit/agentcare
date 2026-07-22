@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # Shared select shape for any query that returns an appointment for display
 # to a patient — includes the doctor's name and the slot's actual time,
 # neither of which live on the raw appointments row.
-PATIENT_FACING_APPOINTMENT_FIELDS = "id, status, reason, doctors(name), appointment_slots(start_time, end_time)"
+PATIENT_FACING_APPOINTMENT_FIELDS = "id, status, reason, doctors(name, department_id), appointment_slots(start_time, end_time)"
 
 def get_available_slots(department_id: str) -> list[dict | None]:
     """List open appointment slots for doctors in a given department.

@@ -1,8 +1,8 @@
 """AgentCare — visual demo frontend.
 
-Runs the agent pipeline (Coordinator → Safety → Routing → Appointment) step by
-step, showing each agent's decision and the tools it calls live, and streaming
-the appointment agent's slot selection with an interrupt for the patient to pick.
+Drives the compiled agent graph (app/agents/graph.py) via .stream(), showing
+each agent node's decision live, and handling the Appointment agent's slot
+selection with a pause-and-resume.
 
 Run:  uv run streamlit run streamlit_app.py
 """
@@ -11,14 +11,10 @@ import streamlit as st
 from supabase import create_client
 
 from config import get_settings
-from app.agents.coordinator import coordinator_node
-from app.agents.safety import safety_node
-from app.agents.routing import routing_node
-from app.agents.appointment import appointment_graph
-from app.agents.prompts import APPOINTMENT_AGENT_PROMPT
-from langgraph.types import Command
+from app.agents.graph import agentcare_graph
+from app.services.supabase.factory import get_supabase_client
 
-st.set_page_config(page_title="AgentCare", page_icon="🏥", layout="centered")
+st.set_page_config(page_title="AgentCare", page_icon=":material/local_hospital:", layout="centered")
 
 
 @st.cache_resource
@@ -27,9 +23,23 @@ def auth_client():
     return create_client(s.supabase_url, s.supabase_publishable_key)
 
 
+def get_reply(workflow_run_id: str) -> str | None:
+    """Read the agent's final natural-language reply, stored on the workflow_run."""
+    row = (
+        get_supabase_client()
+        .table("workflow_runs")
+        .select("state")
+        .eq("id", workflow_run_id)
+        .single()
+        .execute()
+        .data
+    )
+    return (row.get("state") or {}).get("reply")
+
+
 # ---------------------------------------------------------------- auth
-def login_view():
-    st.title("🏥 AgentCare")
+def auth_view():
+    st.title("AgentCare")
     st.caption("Your hospital administrative assistant.")
 
     login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
@@ -64,59 +74,89 @@ def login_view():
                             "password": password,
                             "options": {"data": {"full_name": name}},
                         })
-                        # role='patient' + name are set automatically by the
-                        # handle_new_user DB trigger — never by the client.
+                        # role='patient' + name are set by the handle_new_user
+                        # DB trigger, never by the client.
                         if res.session:
                             st.session_state.user_id = res.user.id
                             st.session_state.email = email
                             st.rerun()
                         else:
                             st.info(
-                                "Account created. Please check your email to confirm "
-                                "it, then log in. (For local/demo, ask an admin to "
-                                "disable email confirmation.)"
+                                "Account created. Please confirm your email, then log in. "
+                                "(For the demo, an admin can disable email confirmation.)"
                             )
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Sign up failed: {e}")
 
 
-# ---------------------------------------------------------------- appointment stage
-def run_appointment(state: dict, resume_choice: str | None = None):
-    """Drive the appointment ReAct graph, showing tool calls live. Returns the
-    interrupt options (list) if it paused for a slot choice, else None."""
-    cfg = {"configurable": {"thread_id": state["workflow_run_id"]}}
-    if resume_choice is not None:
-        stream_input = Command(resume=resume_choice)
-    else:
-        context = (
-            f"patient_id: {state['patient_id']}\n"
-            f"department_id: {state['department_id']}\n"
-            f"Patient request: {state['raw_request']}"
+# ---------------------------------------------------------------- graph run
+def _render_step(node: str, update: dict, acc: dict):
+    update = update or {}
+    if node == "coordinator":
+        st.write(f":material/travel_explore: **Coordinator** → hands off to *{acc.get('delegated_to')}*")
+    elif node == "safety":
+        status = update.get("status")
+        if status == "blocked":
+            st.write(":material/block: **Safety** → blocked (medical advice)")
+        elif status == "escalated":
+            st.write(":material/priority_high: **Safety** → escalated to a human")
+        else:
+            st.write(":material/verified: **Safety** → allowed")
+    elif node == "routing":
+        if update.get("status") == "escalated":
+            st.write(":material/priority_high: **Routing** → no matching department, escalated")
+        else:
+            st.write(f":material/local_hospital: **Routing** → {acc.get('department')}")
+    elif node == "appointment":
+        if update.get("pending_options"):
+            st.write(":material/event: **Appointment** → found open slots, awaiting your choice")
+        elif acc.get("appointment_id"):
+            st.write(":material/event_available: **Appointment** → booked")
+        else:
+            st.write(":material/event: **Appointment** → done")
+
+
+def run_graph(state: dict) -> dict:
+    """Stream the full graph, rendering each node as it completes. Returns the
+    accumulated final state."""
+    acc = dict(state)
+    with st.status("Working through your request…", expanded=True) as status:
+        for chunk in agentcare_graph.stream(state, stream_mode="updates"):
+            for node, update in chunk.items():
+                acc.update(update or {})
+                _render_step(node, update, acc)
+        status.update(label="Done", state="complete")
+    return acc
+
+
+def finish(final: dict):
+    status = final.get("status")
+    delegated = final.get("delegated_to")
+    if status == "blocked":
+        st.error(
+            "I can't help with that — it's asking for medical advice. I can help "
+            "with booking, documents, and appointment status."
         )
-        stream_input = {"messages": [("system", APPOINTMENT_AGENT_PROMPT), ("human", context)]}
-
-    pending_options = None
-    for chunk in appointment_graph.stream(stream_input, cfg, stream_mode="updates"):
-        if "__interrupt__" in chunk:
-            pending_options = chunk["__interrupt__"][0].value.get("options", [])
-            st.write("⏸️ Waiting for you to choose a slot…")
-            continue
-        for node, update in chunk.items():
-            if node == "agent":
-                msg = update["messages"][-1]
-                for tc in getattr(msg, "tool_calls", []) or []:
-                    st.write(f"🔧 calling `{tc['name']}`")
-                if getattr(msg, "content", None) and not getattr(msg, "tool_calls", None):
-                    st.session_state.last_reply = msg.content
-            elif node == "tools":
-                for m in update["messages"]:
-                    st.write(f"↳ `{m.name}` returned")
-    return pending_options
+    elif status == "escalated":
+        st.warning("This has been escalated to a staff member for review.")
+    elif final.get("pending_options"):
+        st.session_state.awaiting_slot = True
+        st.session_state.pending_state = final
+        st.session_state.pending_options = final["pending_options"]
+        st.rerun()
+    elif delegated == "escalate":
+        st.info(
+            "I couldn't match that to a booking, a document, or an appointment "
+            "status check. Try rephrasing, e.g. 'book an appointment for …'."
+        )
+    elif delegated == "document":
+        st.info("Document handling isn't wired up yet.")
+    else:
+        st.success(get_reply(final["workflow_run_id"]) or "Done.")
 
 
-# ---------------------------------------------------------------- pipeline
-def run_pipeline(raw_request: str):
-    state = {
+def new_state(raw_request: str) -> dict:
+    return {
         "user_id": st.session_state.user_id,
         "patient_id": None,
         "workflow_run_id": None,
@@ -132,80 +172,59 @@ def run_pipeline(raw_request: str):
         "slot_choice": None,
     }
 
-    with st.status("🧭 Coordinator — understanding your request", expanded=True) as s:
-        state.update(coordinator_node(state))
-        st.write(f"Hands off to: **{state['delegated_to']}**")
-        s.update(label="🧭 Coordinator ✓", state="complete")
 
-    with st.status("🛡️ Safety & Escalation check", expanded=True) as s:
-        state.update(safety_node(state))
-        if state["status"] == "blocked":
-            s.update(label="🛡️ Blocked", state="error")
-            st.error("I can't help with that — it asks for medical advice. I can only help with scheduling and documents.")
-            return
-        if state["status"] == "escalated":
-            s.update(label="🛡️ Escalated to a human", state="error")
-            st.warning("This has been escalated to a staff member for review.")
-            return
-        st.write("Allowed ✓")
-        s.update(label="🛡️ Safety ✓", state="complete")
-
-    if state["delegated_to"] == "routing":
-        with st.status("🏥 Routing to a department", expanded=True) as s:
-            state.update(routing_node(state))
-            if state["status"] == "escalated":
-                s.update(label="🏥 Escalated", state="error")
-                st.warning("Couldn't confidently match a department — escalated for review.")
-                return
-            st.write(f"Department: **{state['department']}**")
-            s.update(label=f"🏥 Routed → {state['department']} ✓", state="complete")
-
-    if state["delegated_to"] == "appointment":
-        with st.status("📅 Appointment agent", expanded=True):
-            options = run_appointment(state)
-        if options:
-            # pause for slot selection across a Streamlit rerun
-            st.session_state.awaiting_slot = True
-            st.session_state.pending_state = state
-            st.session_state.pending_options = options
-            st.rerun()
-        else:
-            st.success(st.session_state.get("last_reply", "Done."))
-    elif state["delegated_to"] == "document":
-        st.info("Document handling isn't wired up yet.")
-    elif state["delegated_to"] == "escalate":
-        st.warning("Sent to a human for review.")
-
-
-# ---------------------------------------------------------------- slot selection view
+# ---------------------------------------------------------------- slot selection
 def slot_selection_view():
     st.subheader("Choose a time")
-    options = st.session_state.pending_options
-    for opt in options:
-        label = f"{opt['start']} → {opt['end']}"
-        if st.button(label, key=opt["slot_id"], use_container_width=True):
-            state = st.session_state.pending_state
-            with st.status("📅 Booking your slot", expanded=True):
-                run_appointment(state, resume_choice=opt["slot_id"])
+    for opt in st.session_state.pending_options:
+        if st.button(f"{opt['start']} → {opt['end']}", key=opt["slot_id"], width="stretch"):
+            state = dict(st.session_state.pending_state)
+            state["slot_choice"] = opt["slot_id"]
+            final = run_graph(state)
             st.session_state.awaiting_slot = False
-            st.success(st.session_state.get("last_reply", "Booked!"))
-            # keep the confirmation on screen; clear the pending flags
             st.session_state.pending_options = None
             st.session_state.pending_state = None
+            st.success(get_reply(final["workflow_run_id"]) or "Booked!")
 
 
 # ---------------------------------------------------------------- main
 def main():
     if "user_id" not in st.session_state:
-        login_view()
+        auth_view()
         return
 
-    st.title("🏥 AgentCare")
-    st.caption(f"Logged in as {st.session_state.email}")
-    if st.sidebar.button("Log out"):
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
-        st.rerun()
+    with st.sidebar:
+        st.header(":material/local_hospital: AgentCare")
+        st.write(
+            "An agentic assistant for hospital **administrative** tasks — "
+            "booking, rescheduling, cancelling appointments, and coordinating "
+            "documents. It does not give medical advice."
+        )
+        st.subheader("How it works")
+        st.markdown(
+            "Each request flows through specialised agents:\n"
+            "- :material/travel_explore: **Coordinator** — understands intent\n"
+            "- :material/verified: **Safety** — blocks medical advice, escalates emergencies\n"
+            "- :material/local_hospital: **Routing** — picks the right department\n"
+            "- :material/event: **Appointment** — finds slots, books, reschedules, cancels"
+        )
+        st.subheader("Try asking")
+        st.markdown(
+            "- *Book an appointment for my knee pain*\n"
+            "- *I have a bad headache and want to see someone*\n"
+            "- *Show my appointments*\n"
+            "- *What medicine should I take?* (blocked)\n"
+            "- *Chest pain, can't breathe* (escalated)"
+        )
+        st.divider()
+        st.caption(f"Signed in as {st.session_state.email}")
+        if st.button("Log out", width="stretch"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
+
+    st.title("AgentCare")
+    st.caption("Describe what you need and watch the agents work.")
 
     if st.session_state.get("awaiting_slot"):
         slot_selection_view()
@@ -215,7 +234,7 @@ def main():
     if prompt:
         st.chat_message("user").write(prompt)
         with st.chat_message("assistant"):
-            run_pipeline(prompt)
+            finish(run_graph(new_state(prompt)))
 
 
 main()

@@ -11,9 +11,9 @@ from app.tools.workflow import create_workflow_run
 # escalate rather than guessing, since nothing downstream is built to
 # confidently handle an unclassified administrative request yet.
 INTENT_TO_NEXT_NODE = {
-    "booking": "routing",
+    "new_booking": "routing",          # a NEW appointment needs a department first
+    "manage_appointment": "appointment",  # reschedule / cancel / status of an existing one
     "document": "document",
-    "status_check": "appointment",
     "other": "escalate",
 }
 

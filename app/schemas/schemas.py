@@ -21,7 +21,7 @@ class CreatePatientRequest(BaseModel):
     emergency_contact: str
 
 class RequestIntent(BaseModel):
-    intent_type: Literal["booking", "document", "status_check", "other"]
+    intent_type: Literal["new_booking", "manage_appointment", "document", "other"]
     summary: str
 
 class RoutingDecision(BaseModel):
