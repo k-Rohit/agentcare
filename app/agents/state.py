@@ -7,6 +7,7 @@ class WorkflowState(TypedDict):
     workflow_run_id: str | None
     raw_request: str
     department: str | None
+    department_id: str | None
     slot_id: str | None
     appointment_id: str | None
     escalation_reason: str | None

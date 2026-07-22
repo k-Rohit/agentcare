@@ -59,13 +59,43 @@ def routing_node(state: WorkflowState) -> dict:
         }
 
     decision = RoutingDecision(**call["args"])
+
+    # Map the chosen department NAME back to its id using the list we already
+    # fetched, so downstream nodes (Appointment) get a usable department_id
+    # without having to re-resolve the name. Case-insensitive to match the LLM's
+    # capitalization loosely.
+    matched = next(
+        (d for d in departments if d["name"].lower() == decision.routed_department.lower()),
+        None,
+    )
+    if matched is None:
+        # The LLM returned a name that isn't actually in the list — treat as an
+        # escalation rather than proceeding with a department that doesn't exist.
+        escalate_request(reason=f"Routing returned an unknown department: {decision.routed_department!r}")
+        update_workflow_run(
+            workflow_run_id,
+            current_step="routing",
+            state={"escalated": True, "reason": "unknown department returned by routing"},
+            status="escalated",
+        )
+        return {
+            "escalation_reason": "unknown department returned by routing",
+            "status": "escalated",
+            "delegated_to": None,
+        }
+
     update_workflow_run(
         workflow_run_id,
         current_step="routing",
-        state={"department": decision.routed_department, "summary": decision.summary},
+        state={
+            "department": matched["name"],
+            "department_id": matched["id"],
+            "summary": decision.summary,
+        },
         status="in_progress",
     )
     return {
-        "department": decision.routed_department,
+        "department": matched["name"],
+        "department_id": matched["id"],
         "delegated_to": "appointment",
     }
