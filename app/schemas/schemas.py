@@ -39,3 +39,8 @@ class SafetyAllow(BaseModel):
 class SafetyBlock(BaseModel):
     """Block the request because it asks the system for medical advice/diagnosis/dosage."""
     reason: str
+    
+class AppointmentResponse(BaseModel):
+    """ The response from the appointment agent with the details of the appointment """
+    appointment_id: str
+    slot_id: str
