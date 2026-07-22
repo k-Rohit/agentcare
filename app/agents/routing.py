@@ -1,5 +1,4 @@
 from langchain_openai import ChatOpenAI
-
 from app.agents.prompts import ROUTING_AGENT_PROMPT
 from app.agents.state import WorkflowState
 from app.schemas.schemas import RoutingDecision

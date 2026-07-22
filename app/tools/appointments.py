@@ -224,3 +224,116 @@ def create_appointment_slot(doctor_id: str, start_time: str, end_time: str) -> d
     except APIError as e:
         raise RuntimeError(f"Failed to create appointment slot for doctor {doctor_id}: {e}") from e
     return response.data[0]
+
+
+def cancel_appointment(appointment_id: str) -> dict:
+    """Cancel an existing appointment and free its slot for others.
+
+    Marks the appointment as cancelled and releases its slot back to
+    "available" so another patient can book that time.
+
+    Args:
+        appointment_id: The appointments.id to cancel.
+
+    Returns:
+        The updated (cancelled) appointments row as a dict.
+
+    Raises:
+        ValueError: If no appointment with that id exists.
+        RuntimeError: If the update fails for a database reason.
+    """
+    client = get_supabase_client()
+
+    try:
+        existing = (
+            client.table("appointments").select("id, slot_id").eq("id", appointment_id).execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to look up appointment {appointment_id}: {e}") from e
+    if not existing.data:
+        raise ValueError(f"No appointment found with id {appointment_id}.")
+
+    slot_id = existing.data[0]["slot_id"]
+
+    try:
+        response = (
+            client.table("appointments")
+            .update({"status": "cancelled"})
+            .eq("id", appointment_id)
+            .execute()
+        )
+        # free the slot back up
+        client.table("appointment_slots").update({"status": "available"}).eq("id", slot_id).execute()
+    except APIError as e:
+        raise RuntimeError(f"Failed to cancel appointment {appointment_id}: {e}") from e
+
+    logger.info(f"Cancelled appointment {appointment_id} and freed slot {slot_id}")
+    return response.data[0]
+
+
+def reschedule_appointment(appointment_id: str, new_slot_id: str) -> dict:
+    """Move an existing appointment to a different open slot.
+
+    Frees the appointment's current slot, books the new one, and updates the
+    appointment (including its doctor, since the new slot may belong to a
+    different doctor). The new slot must currently be available.
+
+    Args:
+        appointment_id: The appointments.id to reschedule.
+        new_slot_id: The id of an available slot to move the appointment to
+            (from get_available_slots).
+
+    Returns:
+        The updated appointments row as a dict, with status "rescheduled".
+
+    Raises:
+        ValueError: If the appointment doesn't exist, or the new slot isn't
+            currently available.
+        RuntimeError: If the update fails for a database reason.
+    """
+    client = get_supabase_client()
+
+    try:
+        existing = (
+            client.table("appointments").select("id, slot_id").eq("id", appointment_id).execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to look up appointment {appointment_id}: {e}") from e
+    if not existing.data:
+        raise ValueError(f"No appointment found with id {appointment_id}.")
+    old_slot_id = existing.data[0]["slot_id"]
+
+    # the new slot must exist and be available
+    try:
+        new_slot = (
+            client.table("appointment_slots")
+            .select("id, doctor_id, status")
+            .eq("id", new_slot_id)
+            .execute()
+        )
+    except APIError as e:
+        raise RuntimeError(f"Failed to look up slot {new_slot_id}: {e}") from e
+    if not new_slot.data or new_slot.data[0]["status"] != "available":
+        raise ValueError(f"Slot {new_slot_id} is not available to reschedule into.")
+
+    new_doctor_id = new_slot.data[0]["doctor_id"]
+
+    try:
+        response = (
+            client.table("appointments")
+            .update({
+                "slot_id": new_slot_id,
+                "doctor_id": new_doctor_id,
+                "status": "rescheduled",
+            })
+            .eq("id", appointment_id)
+            .execute()
+        )
+        # book the new slot, free the old one
+        client.table("appointment_slots").update({"status": "booked"}).eq("id", new_slot_id).execute()
+        client.table("appointment_slots").update({"status": "available"}).eq("id", old_slot_id).execute()
+    except APIError as e:
+        raise RuntimeError(f"Failed to reschedule appointment {appointment_id}: {e}") from e
+
+    logger.info(f"Rescheduled appointment {appointment_id} from slot {old_slot_id} to {new_slot_id}")
+    return response.data[0]
