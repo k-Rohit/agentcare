@@ -30,3 +30,12 @@ class RoutingDecision(BaseModel):
     separate tool (create_escalation), not a field here."""
     routed_department: str
     summary: str
+
+class SafetyAllow(BaseModel):
+    """ Allow the request to proceed as normal administrative handling."""
+    reason: str
+
+
+class SafetyBlock(BaseModel):
+    """Block the request because it asks the system for medical advice/diagnosis/dosage."""
+    reason: str
