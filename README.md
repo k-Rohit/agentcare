@@ -32,7 +32,28 @@ Six distinct agent roles, orchestrated as a LangGraph state graph:
 | Follow-up | Creates reminders and follow-up tasks, detects missed/incomplete workflows |
 | Safety & Escalation | Blocks diagnosis/prescription behavior, flags emergencies, creates human-review records |
 
-**Stack:** Python, FastAPI, LangGraph, Anthropic Claude, Supabase (Postgres + Auth).
+**Stack:** Python, FastAPI, LangGraph, OpenAI (via LangChain), Supabase (Postgres + Auth + Storage).
+
+### Workflow graph
+
+The agents are wired into a single compiled LangGraph `StateGraph`
+(`app/agents/graph.py`). Coordinator and Safety run on every request; Safety is
+an early gate that can block (medical-advice requests) or escalate
+(emergencies). A resume — when the patient has picked an appointment slot —
+re-enters directly at the Appointment node instead of re-running the pipeline.
+
+```mermaid
+graph TD;
+    START([Start]) -. fresh request .-> coordinator
+    START -. "resume: slot chosen" .-> appointment
+    coordinator --> safety
+    safety -. blocked / escalated .-> END([End])
+    safety -. booking .-> routing
+    safety -. status check .-> appointment
+    routing -. no department fits .-> END
+    routing -. department matched .-> appointment
+    appointment --> END
+```
 
 ## Data model
 
