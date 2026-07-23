@@ -3,6 +3,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.prompts import SAFETY_AGENT_PROMPT
 from app.agents.state import WorkflowState
 from app.schemas.schemas import SafetyAllow, SafetyBlock
+from app.tools.audit import log_audit_event
 from app.tools.escalations import create_escalation
 from app.tools.workflow import update_workflow_run
 from config import get_settings
@@ -18,7 +19,7 @@ def safety_node(state: WorkflowState) -> dict:
         return create_escalation(workflow_run_id=workflow_run_id, reason=reason)
 
     settings = get_settings()
-    llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key)
+    llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
     llm_with_tools = llm.bind_tools([escalate_request, SafetyAllow, SafetyBlock])
 
     response = llm_with_tools.invoke([
@@ -31,16 +32,29 @@ def safety_node(state: WorkflowState) -> dict:
 
     call = response.tool_calls[0]
 
+    reason = call["args"]["reason"]
+
+    def _audit(decision: str):
+        log_audit_event(
+            actor_id=state["user_id"],
+            action=f"safety_{decision}",
+            entity_type="workflow_run",
+            entity_id=workflow_run_id,
+            metadata={"reason": reason},
+            workflow_run_id=workflow_run_id,
+        )
+
     if call["name"] == "escalate_request":
         escalate_request(**call["args"])
         update_workflow_run(
             workflow_run_id,
             current_step="safety",
-            state={"safety": "escalated", "reason": call["args"]["reason"]},
+            state={"safety": "escalated", "reason": reason},
             status="escalated",
         )
+        _audit("escalated")
         return {
-            "escalation_reason": call["args"]["reason"],
+            "escalation_reason": reason,
             "status": "escalated",
             "delegated_to": None,
         }
@@ -49,9 +63,10 @@ def safety_node(state: WorkflowState) -> dict:
         update_workflow_run(
             workflow_run_id,
             current_step="safety",
-            state={"safety": "blocked", "reason": call["args"]["reason"]},
+            state={"safety": "blocked", "reason": reason},
             status="blocked",
         )
+        _audit("blocked")
         return {
             "status": "blocked",
             "delegated_to": None,
@@ -62,7 +77,8 @@ def safety_node(state: WorkflowState) -> dict:
     update_workflow_run(
         workflow_run_id,
         current_step="safety",
-        state={"safety": "allowed", "reason": call["args"]["reason"]},
+        state={"safety": "allowed", "reason": reason},
         status="in_progress",
     )
+    _audit("allowed")
     return {}

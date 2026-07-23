@@ -7,7 +7,14 @@ from app.services.supabase.factory import get_supabase_client
 logger = logging.getLogger(__name__)
 
 
-def log_audit_event(actor_id: str | None, action: str, entity_type: str, entity_id: str, metadata: dict | None = None) -> dict:
+def log_audit_event(
+    actor_id: str | None,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    metadata: dict | None = None,
+    workflow_run_id: str | None = None,
+) -> dict:
     """Record one action in the permanent audit trail.
 
     Use this after any state-changing action (booking, cancelling, creating
@@ -26,6 +33,9 @@ def log_audit_event(actor_id: str | None, action: str, entity_type: str, entity_
         entity_id: The id of the specific row this action affected.
         metadata: Any extra context worth keeping, e.g. {"email": "..."}.
             Defaults to an empty dict if not given.
+        workflow_run_id: The conversation/workflow this step belongs to, so
+            all steps of one workflow can be pulled together. None for audit
+            events not tied to a workflow (e.g. an admin creating a doctor).
 
     Returns:
         The newly created audit_events row as a dict.
@@ -41,6 +51,7 @@ def log_audit_event(actor_id: str | None, action: str, entity_type: str, entity_
             "entity_type": entity_type,
             "entity_id": entity_id,
             "metadata": metadata or {},
+            "workflow_run_id": workflow_run_id,
         }).execute()
     except APIError as e:
         logger.error(f"Failed to log audit event '{action}' for {entity_type} {entity_id}: {e}")

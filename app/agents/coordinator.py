@@ -4,8 +4,9 @@ from config import get_settings
 from app.agents.prompts import COORDINATOR_SYSTEM_PROMPT
 from app.agents.state import WorkflowState
 from app.schemas.schemas import RequestIntent
+from app.tools.audit import log_audit_event
 from app.tools.patients import get_or_create_patient_profile
-from app.tools.workflow import create_workflow_run
+from app.tools.workflow import get_or_create_workflow_run, update_workflow_run
 
 # Where the Coordinator sends each classified intent next. "other" goes to
 # escalate rather than guessing, since nothing downstream is built to
@@ -27,9 +28,10 @@ def coordinator_node(state: WorkflowState) -> dict:
     the rest of the graph will persist its progress into.
     """
     patient_profile = get_or_create_patient_profile(state["user_id"])
+    workflow_run_id = state["workflow_run_id"]  # the conversation id, from the frontend
 
     settings = get_settings()
-    llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key)
+    llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
     structured_llm = llm.with_structured_output(RequestIntent)
 
     intent = structured_llm.invoke([
@@ -37,14 +39,28 @@ def coordinator_node(state: WorkflowState) -> dict:
         ("human", state["raw_request"]),
     ])
 
-    workflow_run = create_workflow_run(
-        patient_id=patient_profile["id"],
+    # Create the conversation's workflow_run once (first message), reuse after.
+    get_or_create_workflow_run(workflow_run_id, patient_profile["id"])
+    update_workflow_run(
+        workflow_run_id,
         current_step="coordinator",
         state={"intent_type": intent.intent_type, "summary": intent.summary},
     )
 
+    delegated_to = INTENT_TO_NEXT_NODE[intent.intent_type]
+
+    # Append this step to the audit trail, under the conversation's workflow id.
+    log_audit_event(
+        actor_id=state["user_id"],  # profiles.id (what audit_events.actor_id references)
+        action="classified_intent",
+        entity_type="workflow_run",
+        entity_id=workflow_run_id,
+        metadata={"intent_type": intent.intent_type, "delegated_to": delegated_to},
+        workflow_run_id=workflow_run_id,
+    )
+
     return {
         "patient_id": patient_profile["id"],
-        "workflow_run_id": workflow_run["id"],
-        "delegated_to": INTENT_TO_NEXT_NODE[intent.intent_type],
+        "workflow_run_id": workflow_run_id,
+        "delegated_to": delegated_to,
     }
