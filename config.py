@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     openai_api_key: str
     database_url: str
+    openai_model: str
     
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
