@@ -1,10 +1,12 @@
+import json
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langgraph.types import interrupt, Command
 
 from app.agents.checkpointer import get_checkpointer
 from app.agents.prompts import APPOINTMENT_AGENT_PROMPT
 from app.agents.state import WorkflowState
+from app.tools.audit import log_audit_event
 from app.tools.appointments import (
     get_available_slots,
     book_appointment,
@@ -36,6 +38,49 @@ tools = [get_available_slots, book_appointment,
 
 # bind the llm with the tools
 llm_with_tools = llm.bind_tools(tools=tools)
+
+def _last_appointment_action(messages):
+    """Look back through the conversation for the most recent booking/
+       reschedule/cancel tool result, and return (action_name, result_dict).
+    """
+    for message in reversed(messages):
+        if isinstance(messages, ToolMessage) and message.content is not None  \
+            and messages.name in (
+            "book_appointment", "reschedule_appointment", "cancel_appointment"
+        ):
+                try:
+                    data = json.loads(message.content) if isinstance(message.content, str) else message.content
+                except (json.JSONDecodeError, TypeError):
+                    data = None
+                return message.name, data
+    return None, None
+
+def appointment_finalize_node(state: WorkflowState) -> dict:
+    """Runs once, after the LLM loop finishes. Deterministically records what
+        the agent did — the LLM never touches this.
+    """
+    workflow_run_id = state["workflow_run_id"]
+    action, data = _last_appointment_action(state["messages"])
+    appointment_id = data.get("id") if isinstance(data, dict) else None
+    
+    if action:  # a booking/reschedule/cancel actually happened this turn
+        log_audit_event(
+            actor_id=state["user_id"],
+            action=action,
+            entity_type="appointment",
+            entity_id=workflow_run_id,
+            workflow_run_id=workflow_run_id,
+        )
+        update_workflow_run(
+        workflow_run_id,
+        current_step="appointment",
+        state={"appointment_id": appointment_id},
+    )
+    return {"appointment_id": appointment_id}
+                
+            
+            
+
 
 # Define the agent node (the think step) - 
 def appointment_agent_node(state: WorkflowState) -> dict:

@@ -236,3 +236,15 @@ In one line: `bind_tools` = here's the menu; tool calling = model orders off it;
 **Q: Why does `routing.py` dispatch tools manually instead of using `ToolNode`?**
 
 Two reasons specific to routing. (1) `ToolNode`'s pattern is a *loop* — execute tool, feed result back to the LLM, keep reasoning (`tools → chat_node`). Routing isn't a loop; it makes one decision and the graph should then *branch differently* based on which tool was chosen (`escalate_request` → end as escalated; `RoutingDecision` → go to appointment) and map results into state fields like `department`/`delegated_to` — none of which `ToolNode` does. (2) `RoutingDecision` isn't an executable tool anyway — it has no side effect, it's structured output wearing a tool's clothes so the model can pick between "decide" and "escalate." `ToolNode` genuinely fits where there's a real ReAct loop with side-effecting tools whose results feed back — which is exactly what the Appointment Agent will be, so it belongs there, not here.
+
+---
+
+## Database
+
+**Q: What is a database index, and why add one on `audit_events.workflow_run_id`?**
+
+An index is like the index at the back of a textbook. Without it, to find every mention of "photosynthesis" you'd read all 800 pages; with it, you flip to the back, find the page numbers, and jump straight there. A database index is the same — without one, `select * from audit_events where workflow_run_id = X` makes Postgres do a **full table scan** (check every row); with an index it's a separate sorted structure (a B-tree) mapping `workflow_run_id` values → row locations, so the DB jumps straight to the matches. Fine to scan 50 rows, slow at 500,000.
+
+Why here: the whole point of `workflow_run_id` on `audit_events` is to query "give me every step of this conversation" (`where workflow_run_id = X`), and `audit_events` is append-only so it grows forever — exactly where a full scan degrades. The index keeps that lookup fast regardless of size.
+
+The trade-off (why not index everything): indexes cost extra storage and slightly slow down writes (every insert must also update the index). So you index the columns you frequently filter/join by, not all of them. Primary keys (like `id`) get an index automatically, which is why you don't add one for those.

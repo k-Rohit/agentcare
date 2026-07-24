@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from app.agents.prompts import ROUTING_AGENT_PROMPT
 from app.agents.state import WorkflowState
 from app.schemas.schemas import RoutingDecision
+from app.tools.audit import log_audit_event
 from app.tools.departments import get_departments
 from app.tools.escalations import create_escalation
 from app.tools.workflow import update_workflow_run
@@ -30,7 +31,7 @@ def routing_node(state: WorkflowState) -> dict:
         return create_escalation(workflow_run_id=workflow_run_id, reason=reason)
 
     settings = get_settings()
-    llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key)
+    llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
     llm_with_tools = llm.bind_tools([escalate_request, RoutingDecision])
 
     response = llm_with_tools.invoke([
@@ -50,6 +51,14 @@ def routing_node(state: WorkflowState) -> dict:
             current_step="routing",
             state={"escalated": True, "reason": call["args"]["reason"]},
             status="escalated",
+        )
+        log_audit_event(
+            actor_id=state["user_id"],
+            action="routing_escalated",
+            entity_type="workflow_run",
+            entity_id=workflow_run_id,
+            metadata={"reason": call["args"]["reason"]},
+            workflow_run_id=workflow_run_id,
         )
         return {
             "escalation_reason": call["args"]["reason"],
@@ -92,6 +101,14 @@ def routing_node(state: WorkflowState) -> dict:
             "summary": decision.summary,
         },
         status="in_progress",
+    )
+    log_audit_event(
+        actor_id=state["user_id"],
+        action="routed_to_department",
+        entity_type="department",
+        entity_id=matched["id"],
+        metadata={"department": matched["name"]},
+        workflow_run_id=workflow_run_id,
     )
     return {
         "department": matched["name"],

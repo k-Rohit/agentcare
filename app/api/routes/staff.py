@@ -1,4 +1,5 @@
-# This file is used to create the route for the staff and doctors registration and login. It will handle the requests and responses for the staff and doctors registration and login.
+# This file is used to create the route for the staff and doctors registration and login. 
+# It will handle the requests and responses for the staff and doctors registration and login.
 
 from fastapi import APIRouter, Depends
 from app.schemas.schemas import CreateDoctorRequest, CreateStaffRequest
