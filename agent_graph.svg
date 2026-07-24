@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="760" viewBox="0 0 1120 760" role="img" aria-labelledby="title desc">
+  <title id="title">AgentCare LangGraph Workflow</title>
+  <desc id="desc">Workflow graph from start through coordinator, safety, routing, appointment, tools, document, followup, and end.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+    </marker>
+    <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" />
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .node { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 8; }
+      .start { fill: #ecfeff; stroke: #0891b2; }
+      .end { fill: #f5f3ff; stroke: #7c3aed; }
+      .tool { fill: #fff7ed; stroke: #ea580c; }
+      .label { font: 600 15px Arial, sans-serif; fill: #0f172a; text-anchor: middle; dominant-baseline: middle; }
+      .edge { fill: none; stroke: #475569; stroke-width: 1.8; marker-end: url(#arrow); }
+      .conditional { fill: none; stroke: #7c3aed; stroke-width: 1.8; stroke-dasharray: 6 5; marker-end: url(#arrow-soft); }
+      .edge-label { font: 12px Arial, sans-serif; fill: #475569; text-anchor: middle; }
+      .conditional-label { font: 12px Arial, sans-serif; fill: #6d28d9; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1120" height="760" />
+
+  <rect class="node start" x="500" y="32" width="120" height="46" />
+  <text class="label" x="560" y="55">START</text>
+
+  <rect class="node" x="460" y="120" width="200" height="50" />
+  <text class="label" x="560" y="145">coordinator_node</text>
+
+  <rect class="node" x="470" y="220" width="180" height="50" />
+  <text class="label" x="560" y="245">safety_node</text>
+
+  <rect class="node" x="470" y="360" width="180" height="50" />
+  <text class="label" x="560" y="385">router_node</text>
+
+  <rect class="node" x="735" y="360" width="230" height="50" />
+  <text class="label" x="850" y="385">appointment_agent_node</text>
+
+  <rect class="node tool" x="760" y="490" width="180" height="50" />
+  <text class="label" x="850" y="515">tools</text>
+
+  <rect class="node" x="720" y="620" width="260" height="50" />
+  <text class="label" x="850" y="645">appointment_finalize_node</text>
+
+  <rect class="node" x="175" y="360" width="180" height="50" />
+  <text class="label" x="265" y="385">document_node</text>
+
+  <rect class="node" x="470" y="620" width="180" height="50" />
+  <text class="label" x="560" y="645">followup_node</text>
+
+  <rect class="node end" x="155" y="620" width="120" height="46" />
+  <text class="label" x="215" y="643">END</text>
+
+  <path class="edge" d="M 560 78 L 560 120" />
+  <path class="edge" d="M 560 170 L 560 220" />
+
+  <path class="conditional" d="M 560 270 L 560 360" />
+  <text class="conditional-label" x="605" y="320">routing</text>
+
+  <path class="conditional" d="M 650 245 C 760 245 850 280 850 360" />
+  <text class="conditional-label" x="780" y="275">appointment</text>
+
+  <path class="conditional" d="M 470 245 C 355 250 265 285 265 360" />
+  <text class="conditional-label" x="345" y="275">document</text>
+
+  <path class="conditional" d="M 505 270 C 415 350 270 490 215 620" />
+  <text class="conditional-label" x="295" y="500">blocked / escalated / none</text>
+
+  <path class="conditional" d="M 650 385 L 735 385" />
+  <text class="conditional-label" x="692" y="374">appointment</text>
+
+  <path class="conditional" d="M 470 385 L 355 385" />
+  <text class="conditional-label" x="412" y="374">document</text>
+
+  <path class="conditional" d="M 560 410 L 560 620" />
+  <text class="conditional-label" x="612" y="535">followup</text>
+
+  <path class="conditional" d="M 495 410 C 400 495 295 565 275 625" />
+  <text class="conditional-label" x="380" y="565">END</text>
+
+  <path class="conditional" d="M 850 410 L 850 490" />
+  <text class="conditional-label" x="900" y="455">tool call</text>
+
+  <path class="edge" d="M 760 515 C 690 515 690 385 735 385" />
+  <text class="edge-label" x="690" y="455">loop</text>
+
+  <path class="conditional" d="M 850 540 L 850 620" />
+  <text class="conditional-label" x="920" y="585">no tool calls</text>
+
+  <path class="edge" d="M 720 645 L 650 645" />
+  <path class="edge" d="M 470 645 L 275 645" />
+  <path class="edge" d="M 265 410 C 255 500 230 560 215 620" />
+</svg>
