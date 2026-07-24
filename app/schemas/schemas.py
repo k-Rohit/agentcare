@@ -44,3 +44,8 @@ class AppointmentResponse(BaseModel):
     """ The response from the appointment agent with the details of the appointment """
     appointment_id: str
     slot_id: str
+    
+class ClassifyDocument(BaseModel):
+    """ The response from the document agent with the classification of the document """
+    classification: Literal["lab_report","ecg","imaging","prescription","discharge_summary","referral","other"]
+    summary: str

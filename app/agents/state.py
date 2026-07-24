@@ -21,3 +21,4 @@ class WorkflowState(TypedDict):
     slot_choice: str | None
     """The slot_id the patient picked, passed back in to resume a paused
     Appointment run; None on a fresh request."""
+    document_path: str | None
