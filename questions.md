@@ -248,3 +248,67 @@ An index is like the index at the back of a textbook. Without it, to find every 
 Why here: the whole point of `workflow_run_id` on `audit_events` is to query "give me every step of this conversation" (`where workflow_run_id = X`), and `audit_events` is append-only so it grows forever — exactly where a full scan degrades. The index keeps that lookup fast regardless of size.
 
 The trade-off (why not index everything): indexes cost extra storage and slightly slow down writes (every insert must also update the index). So you index the columns you frequently filter/join by, not all of them. Primary keys (like `id`) get an index automatically, which is why you don't add one for those.
+
+---
+
+## Agents vs. deterministic code (the recurring principle)
+
+**Q: When should the LLM do something vs. plain Python?**
+
+LLM only for **genuine judgment over open-ended language** (classify intent, pick a department from a description, decide book/reschedule/cancel, classify a document type). Plain Python for anything **mechanical or fixed** (booking a chosen slot, scheduling a reminder, sending an email, writing an audit row, formatting a confirmation). Rule of thumb: if the answer is always the same given the inputs, it's not a judgment — don't put an LLM on it. Wrapping deterministic steps in LLM calls just adds cost, latency, and a chance to hallucinate, for zero benefit.
+
+---
+
+**Q: Isn't logging/auditing something the LLM should do, since it's "doing the reasoning"?**
+
+No — that's the trap. If audit logging were a *tool the LLM calls*, logging would depend on the model *remembering* to call it (unreliable), and it's not a reasoning decision anyway ("should I record that a booking happened? — always yes"). So audit/workflow updates are done by **deterministic Python that observes what the LLM did**. In the Appointment node that's the `appointment_finalize` node: it reads the tool results out of `messages` after the loop and logs the audit itself. LLM reasons; code bookkeeps.
+
+---
+
+**Q: Why is the Document node structured output, but the Appointment node a ToolNode ReAct loop?**
+
+Because their shapes differ. Appointment genuinely *chooses among* actions (book/reschedule/cancel/status) and may loop → a real ReAct loop, so `ToolNode`. Document has exactly **one** judgment (what *type* is this file?) inside a **fixed** pipeline (upload → classify → store → check) → that's a single `with_structured_output` classification call, no loop, no ToolNode. Not every agent is a ReAct loop; match the machinery to whether there's actually iterative tool choice.
+
+---
+
+**Q: Why can't the Document agent upload the file itself?**
+
+The LLM cannot handle raw file **bytes** — it can't receive or pass them as tool arguments. So the actual upload (`upload_document`, bytes → Supabase Storage) happens in the **UI**, which then passes the resulting `document_path` into the graph state. The Document node only ever deals with the *pointer* (`document_path`) + the classification — it records **metadata** (`store_document`), never the bytes. Bytes live at the UI/storage layer; metadata lives at the node/DB layer.
+
+---
+
+## Interrupts & the checkpointer
+
+**Q: How does `interrupt()` pause and resume — one line behaving two ways?**
+
+`choice = interrupt(payload)` runs differently across two invocations. **First run (pause):** it does NOT return — LangGraph saves the whole graph state to Postgres (the checkpointer) and *halts*; the code after it never runs, and `.invoke()` returns with a `"__interrupt__"` marker carrying the payload. **Second run (resume):** you call the graph again with `Command(resume=value)` on the **same `thread_id`**; LangGraph reloads the saved state, re-runs the paused node, and this time `interrupt()` *returns* `value`, so `choice = value` and execution continues. Requires a checkpointer (to save the pause) and a `thread_id` (to find it again). The pause and resume are the *same line* executed at two different moments, with Postgres holding everything in between.
+
+---
+
+**Q: Why does the reminder Follow-up node not send the email itself, 24h before?**
+
+Because a graph node runs **once, synchronously**, at booking time — it can't "wait" until 24h before the appointment (which may be days away). So the node only **schedules**: it creates a `reminders` row with `scheduled_at = start − 24h`, status `pending`. A **separate background process** (`reminder_sender.py`, run on a cron/timer) is what actually acts later — it wakes up, finds reminders whose time has come, sends the email, marks them sent. Scheduling and sending are two different jobs, done by two different things. (And sending is deterministic — the email is a fixed template, not LLM-generated.)
+
+---
+
+## Identity: the two patient IDs
+
+**Q: `profiles.id` vs `patient_profiles.id` — why do audit/FK bugs keep coming from this?**
+
+A patient has **two** different ids: `profiles.id` (their *login identity*, = `auth.users.id` = `state["user_id"]`) and `patient_profiles.id` (the id of their *medical-record row*). Same person, two numbers, two purposes — like a passport number vs. a hospital chart number. `audit_events.actor_id` is a foreign key to `profiles(id)` ("who did this"), so it needs `state["user_id"]`; passing `patient_profiles.id` there fails the FK. Rule: "who is this person / who did this" → `state["user_id"]`; "which patient record / whose appointments" → `patient_profiles.id`.
+
+---
+
+## One conversation, one workflow id
+
+**Q: Why is the checkpointer `thread_id` the conversation id, not `patient_id`?**
+
+Goal: memory *within* a conversation, but a *fresh* conversation each new session. The checkpointer thread IS the memory store — keying it by `patient_id` would make one permanent memory blob per patient forever, so a returning user would resume old state (the opposite of "fresh each time"). Keying it by a per-conversation id (generated once per session, used as BOTH the `thread_id` and the `workflow_run.id`) gives memory within and fresh across. `patient_id` stays a *column* so you can still list a patient's past conversations (`workflow_runs where patient_id = X`). The Coordinator `get_or_create`s that one workflow_run so all steps of a conversation share it; every node's audit rows carry the same `workflow_run_id`.
+
+---
+
+## Type errors
+
+**Q: Why so many red squiggles / type errors when the code runs fine?**
+
+They're the editor's **static type checker** (Pylance/pyright), not runtime errors — Python doesn't enforce type hints at runtime, so none of them stop the app. Most come from `WorkflowState` fields typed `str | None` (they start None, get filled as the graph runs) being passed to functions wanting `str` — the checker can't *prove* they're set by then, even though they always are. Others come from loosely-typed Supabase `.data` and LangChain's flexible `config`/message args. Fix: set `"python.analysis.typeCheckingMode": "basic"` in `.vscode/settings.json` — it drops the "can't prove not-None" noise while still catching genuine mistakes (undefined names, real crashes). Type errors ≠ bugs; they're "the checker can't verify this."
