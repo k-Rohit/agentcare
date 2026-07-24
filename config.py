@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     openai_api_key: str
     database_url: str
     openai_model: str
-    
+
+    resend_api_key: str | None = None
+    reminder_from_email: str = "onboarding@resend.dev"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
