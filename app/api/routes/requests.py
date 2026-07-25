@@ -1,14 +1,15 @@
 from uuid import uuid4
-from app.schemas.requests import SubmitRequest
-from fastapi import APIRouter, Depends
-from auth import get_current_user
-from app.agents.graph import agentcare
+
+from fastapi import APIRouter, Depends, HTTPException
 from langchain_core.messages import AIMessage
 
-requests = APIRouter()
-from fastapi import APIRouter, Depends, HTTPException
+from auth import get_current_user
+from app.agents.graph import agentcare
+from app.schemas.requests import SubmitRequest
 
-@requests.post("/chat")
+router = APIRouter()
+
+@router.post("/chat")
 def chat(request: SubmitRequest, current_user: dict = Depends(get_current_user)):
     # RESUME — answering a paused interrupt (e.g. the patient picked a slot)
     if request.resume_value is not None:
@@ -58,7 +59,7 @@ def _last_reply(messages):
     for m in reversed(messages):
         if isinstance(m, AIMessage) and m.content and not m.tool_calls:
             return m.content
-        return None
+    return None
 
         
         
