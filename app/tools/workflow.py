@@ -50,20 +50,17 @@ def get_or_create_workflow_run(workflow_run_id: str, patient_id: str, current_st
 def update_workflow_run(workflow_run_id: str, current_step: str, state: dict, status: str = "in_progress") -> dict:
     """Update an existing workflow_runs row's progress.
 
-    Use this after every node runs (except the Coordinator, which creates
-    the row instead) — this is what makes the workflow resumable rather than
-    only ever living in memory.
+    Use this after every node runs. The given `state` is MERGED into whatever is
+    already stored (not replaced), so each node's contribution accumulates — e.g.
+    the Coordinator's `summary` survives even after later nodes add their own
+    fields. Pass only the fields this step is adding/changing.
 
     Args:
         workflow_run_id: The workflow_runs.id to update.
         current_step: The name of the node that just ran, e.g. "routing".
-        state: The full current state to persist — this REPLACES the stored
-            state entirely, it does not merge with what was there before.
-            Since LangGraph already accumulates every node's contributions
-            into one in-memory state object as the graph runs, pass that
-            whole object here, not just this node's own new fields, or
-            earlier steps' data will be silently overwritten.
-        status: One of "in_progress", "completed", "failed", "escalated".
+        state: The fields this step wants to add/update; merged into the
+            existing state.
+        status: One of "in_progress", "completed", "failed", "escalated", "blocked".
             Defaults to "in_progress".
 
     Returns:
@@ -74,9 +71,12 @@ def update_workflow_run(workflow_run_id: str, current_step: str, state: dict, st
     """
     client = get_supabase_client()
     try:
+        existing = client.table("workflow_runs").select("state").eq("id", workflow_run_id).execute()
+        current_state = existing.data[0]["state"] if existing.data else {}
+        merged_state = {**(current_state or {}), **state}  # accumulate, don't clobber
         response = (
             client.table("workflow_runs")
-            .update({"current_step": current_step, "state": state, "status": status})
+            .update({"current_step": current_step, "state": merged_state, "status": status})
             .eq("id", workflow_run_id)
             .execute()
         )
