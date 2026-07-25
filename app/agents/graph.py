@@ -45,6 +45,13 @@ class AgentCare:
 
         return END
 
+    def _after_coordinator(self, state: WorkflowState) -> str:
+        """Chat is fully answered by the coordinator (status='completed') → end.
+        Every task request must pass through the Safety gate first."""
+        if state.get("status") == "completed":
+            return END
+        return "safety_node"
+
     def _build_graph(self):
         graph = StateGraph(WorkflowState)
 
@@ -58,9 +65,13 @@ class AgentCare:
         graph.add_node("followup_node", followup_node)
         graph.add_node("tools", ToolNode(tools))
 
-        # entry: coordinator -> safety
+        # entry: coordinator -> safety (unless the coordinator already answered a chat)
         graph.add_edge(START, "coordinator_node")
-        graph.add_edge("coordinator_node", "safety_node")
+        graph.add_conditional_edges(
+            "coordinator_node",
+            self._after_coordinator,
+            {"safety_node": "safety_node", END: END},
+        )
 
         # after safety, branch on the coordinator's delegation (or stop if blocked/escalated)
         graph.add_conditional_edges(
