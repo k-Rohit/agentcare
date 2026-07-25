@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from config import get_settings
 from app.agents.prompts import COORDINATOR_SYSTEM_PROMPT
 from app.agents.state import WorkflowState
-from app.schemas.schemas import RequestIntent
+from app.schemas.agents import RequestIntent
 from app.tools.audit import log_audit_event
 from app.tools.patients import get_or_create_patient_profile
 from app.tools.workflow import get_or_create_workflow_run, update_workflow_run

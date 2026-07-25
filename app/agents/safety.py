@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 
 from app.agents.prompts import SAFETY_AGENT_PROMPT
 from app.agents.state import WorkflowState
-from app.schemas.schemas import SafetyAllow, SafetyBlock
+from app.schemas.agents import SafetyAllow, SafetyBlock
 from app.tools.audit import log_audit_event
 from app.tools.escalations import create_escalation
 from app.tools.workflow import update_workflow_run

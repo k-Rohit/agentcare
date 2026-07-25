@@ -352,3 +352,27 @@ LangGraph calls a conditional-edge function **per step, with the live state as i
 7. **Once a migration is applied, never edit it — write a new one.**
 
 The meta-point: the write → run → read-error → fix loop *is* the skill; nobody writes it clean first try. The goal isn't fewer mistakes, it's shortening the gap between making one and noticing it — and habit #1 (run it immediately) shortens that most.
+
+---
+
+**Q: Concretely, what breaks if you put `state` in `__init__` and read `self.state` in routing?**
+
+Buggy code:
+```python
+def __init__(self, state):
+    self.state = state                                  # save a copy on the object
+def _route_delegation(self, state):
+    delegated_to = self.state.get("delegated_to")       # BUG: reads the saved copy
+```
+
+Request: "book an appointment for my knee pain". Starting state has `delegated_to = None`.
+Track two things as the graph runs — the *live state* (flows through the graph) and *`self.state`* (the frozen copy):
+
+- **Start:** live `delegated_to = None`, self.state `delegated_to = None`.
+- **coordinator_node** returns `{"delegated_to": "routing"}` → LangGraph merges into the live state.
+  - live: `"routing"` ✅ updated. self.state: `None` — unchanged (the graph never touches your saved copy).
+- **safety_node** returns `{}` → live still `"routing"`, self.state still `None`.
+- **conditional edge → `_route_delegation`** reads `self.state["delegated_to"]` = `None` → matches nothing → returns `END`.
+- **The graph stops right after safety.** Routing and Appointment never run; nothing gets booked. The patient's request silently does nothing.
+
+Root cause: `self.state` is set once and never updates — the graph updates a *different* object (the live state it carries), so any code reading `self.state` sees the original values forever. Fix: read the `state` **parameter** LangGraph passes in (`state.get("delegated_to")` → `"routing"` → routes correctly). This is why per-request state must never live on `self`.

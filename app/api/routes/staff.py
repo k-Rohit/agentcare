@@ -2,7 +2,7 @@
 # It will handle the requests and responses for the staff and doctors registration and login.
 
 from fastapi import APIRouter, Depends
-from app.schemas.schemas import CreateDoctorRequest, CreateStaffRequest
+from app.schemas.staff import CreateDoctorRequest, CreateStaffRequest
 from app.services.supabase.auth_ops import create_auth_account
 from app.services.supabase.factory import get_supabase_client
 from auth import require_role

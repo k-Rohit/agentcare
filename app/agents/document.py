@@ -5,7 +5,7 @@ from app.tools.documents import store_document
 from app.tools.audit import log_audit_event
 from app.tools.workflow import update_workflow_run
 from app.agents.prompts import DOCUMENT_AGENT_PROMPT
-from app.schemas.schemas import ClassifyDocument
+from app.schemas.agents import ClassifyDocument
 from config import get_settings
 from datetime import datetime
 import logging
