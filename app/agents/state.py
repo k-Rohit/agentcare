@@ -22,3 +22,12 @@ class WorkflowState(TypedDict):
     """The slot_id the patient picked, passed back in to resume a paused
     Appointment run; None on a fresh request."""
     document_path: str | None
+    history: list[dict]
+    """The recent clean transcript of THIS conversation ({role, content}), loaded
+    from the chat_messages table at the start of each turn and fed to the agents
+    as short-term memory. Distinct from `messages`, which is per-turn ReAct
+    scratch (system prompts, tool calls) that gets reset each message."""
+    routing_note: str | None
+    """The routing agent's warm, patient-facing line naming the chosen department,
+    shown just before the slot picker. Set only when routing runs this turn;
+    reset each turn by the coordinator."""

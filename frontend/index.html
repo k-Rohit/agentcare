@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentCare</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ─────────────── AUTH VIEW ─────────────── -->
+  <div id="auth-view" class="auth-wrap">
+    <div class="auth-card">
+      <div class="brand">
+        <span class="brand-mark">✚</span>
+        <h1>AgentCare</h1>
+      </div>
+      <p class="tagline">Your hospital administrative assistant.</p>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="login">Log in</button>
+        <button class="tab" data-tab="signup">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Email<input type="email" name="email" required autocomplete="email" /></label>
+        <label>Password<input type="password" name="password" required autocomplete="current-password" /></label>
+        <button type="submit" class="btn-primary">Log in</button>
+      </form>
+
+      <form id="signup-form" class="auth-form hidden">
+        <label>Full name<input type="text" name="name" required /></label>
+        <label>Email<input type="email" name="email" required /></label>
+        <label>Password<input type="password" name="password" required minlength="6" autocomplete="new-password" /></label>
+        <button type="submit" class="btn-primary">Create account</button>
+      </form>
+
+      <p id="auth-error" class="auth-error"></p>
+    </div>
+  </div>
+
+  <!-- ─────────────── APP VIEW ─────────────── -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="brand-mark small">✚</span>
+        <span class="sidebar-title">AgentCare</span>
+      </div>
+
+      <button id="new-chat" class="btn-newchat">+ New conversation</button>
+
+      <div class="sidebar-section-label">Recent</div>
+      <div id="conversation-list" class="conversation-list"></div>
+
+      <div class="sidebar-foot">
+        <div class="user-chip">
+          <span id="user-avatar" class="user-avatar"></span>
+          <div class="user-meta">
+            <span id="user-name" class="user-name"></span>
+            <span id="user-role" class="user-role"></span>
+          </div>
+        </div>
+        <button id="logout" class="btn-logout" title="Log out">Log out</button>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <header class="chat-header">
+        <h2>How can I help?</h2>
+        <p class="chat-sub">Book, reschedule, cancel, or check your appointments. I don't give medical advice.</p>
+      </header>
+
+      <div id="messages" class="messages">
+        <div class="empty-state">
+          <p>Try one of these:</p>
+          <div class="suggestions">
+            <button class="suggestion">Book an appointment for my knee pain</button>
+            <button class="suggestion">Show my appointments</button>
+            <button class="suggestion">Reschedule my appointment</button>
+          </div>
+        </div>
+      </div>
+
+      <form id="composer" class="composer">
+        <div class="composer-box">
+          <textarea id="composer-input" rows="1" placeholder="Describe what you need…" autocomplete="off"></textarea>
+          <button type="submit" class="btn-send" aria-label="Send">➤</button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -113,5 +113,6 @@ def routing_node(state: WorkflowState) -> dict:
     return {
         "department": matched["name"],
         "department_id": matched["id"],
+        "routing_note": decision.patient_message,
         "delegated_to": "appointment",
     }

@@ -90,12 +90,22 @@ def appointment_finalize_node(state: WorkflowState) -> dict:
     return {"appointment_id": appointment_id}
 
 # Define the agent node (the think step) -
+def _history_block(history: list[dict]) -> str:
+    """Render the recent transcript so the agent can resolve references like
+    "the second one" or "the earlier appointment". Empty string if no history."""
+    if not history:
+        return ""
+    lines = "\n".join(f"{h['role']}: {h['content']}" for h in history)
+    return f"Conversation so far:\n{lines}\n\n"
+
+
 def appointment_agent_node(state: WorkflowState) -> dict:
     messages = state['messages']
-    if not messages:  # first time entering appointment
+    if not messages:  # first time entering appointment this turn
         messages = [
             SystemMessage(content=APPOINTMENT_AGENT_PROMPT),
-            HumanMessage(content=f"patient_id: {state['patient_id']}\n"
+            HumanMessage(content=f"{_history_block(state.get('history') or [])}"
+                                f"patient_id: {state['patient_id']}\n"
                                 f"department_id: {state['department_id']}\n"
                                 f"request: {state['raw_request']}")
         ]

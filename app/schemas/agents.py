@@ -15,6 +15,10 @@ class RoutingDecision(BaseModel):
     separate tool (create_escalation), not a field here."""
     routed_department: str
     summary: str
+    patient_message: str
+    """A warm, natural one-sentence message to show the patient — it names the
+    department and hints that available times are coming next. Friendly and
+    administrative only; never diagnoses, interprets symptoms, or gives advice."""
 
 
 class SafetyAllow(BaseModel):
