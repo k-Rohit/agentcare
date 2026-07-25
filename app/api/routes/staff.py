@@ -2,9 +2,11 @@
 # It will handle the requests and responses for the staff and doctors registration and login.
 
 from fastapi import APIRouter, Depends
-from app.schemas.staff import CreateDoctorRequest, CreateStaffRequest
+from app.schemas.staff import CreateDoctorRequest, CreateStaffRequest, ResolveEscalationRequest
 from app.services.supabase.auth_ops import create_auth_account
 from app.services.supabase.factory import get_supabase_client
+from app.tools.audit import log_audit_event
+from app.tools.escalations import get_pending_escalations, resolve_escalation
 from auth import require_role
 import logging  
 
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/register-doctor")
-async def create_doctor(request: CreateDoctorRequest, current_user: dict = Depends(require_role("admin"))):
+def create_doctor(request: CreateDoctorRequest, current_user: dict = Depends(require_role("admin"))):
     """Admin-only: provision a doctor's auth account, promote the profile to role=doctor, and create the doctors row."""
     logger.info(f"Admin {current_user['id']} creating doctor account for {request.email}")
     client = get_supabase_client()
@@ -44,7 +46,7 @@ async def create_doctor(request: CreateDoctorRequest, current_user: dict = Depen
 
 
 @router.post("/register-staff")
-async def create_staff(request: CreateStaffRequest, current_user: dict = Depends(require_role("admin"))):
+def create_staff(request: CreateStaffRequest, current_user: dict = Depends(require_role("admin"))):
     """
     Admin-only: provision a staff's auth account, promote the profile to role=staff, and create the staff row.
     """
@@ -76,3 +78,22 @@ async def create_staff(request: CreateStaffRequest, current_user: dict = Depends
     logger.info(f"Audit event recorded for staff creation: {new_user_id}")
 
     return {"user_id": new_user_id, "temporary_password": temp_password}
+
+@router.get("/escalations")
+def list_escalations(current_user: dict = Depends(require_role("admin"))):
+    return get_pending_escalations()
+
+@router.post("/escalations/{escalation_id}/resolve")
+def resolve(escalation_id: str,
+            request: ResolveEscalationRequest,
+            current_user: dict = Depends(require_role("staff", "admin"))):
+    """Record a staff member's decision on an escalation."""
+    
+    log_audit_event(actor_id=current_user["id"], action=f"escalation_{request.status}",
+                    entity_type="escalation", entity_id=escalation_id)
+    
+    return resolve_escalation(
+        escalation_id=escalation_id,
+        reviewed_by=current_user["id"],
+        status=request.status,
+    )
