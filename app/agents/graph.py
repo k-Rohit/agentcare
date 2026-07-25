@@ -11,7 +11,6 @@ from app.agents.routing import routing_node
 from app.agents.safety import safety_node
 from app.agents.state import WorkflowState
 
-
 class AgentCare:
     """The compiled AgentCare workflow.
 
@@ -20,7 +19,7 @@ class AgentCare:
     """
 
     def __init__(self):
-        setup_checkpointer()               # ensure checkpoint tables exist (idempotent)
+        setup_checkpointer()
         self.checkpointer = get_checkpointer()
         self.workflow = self._build_graph()
 
@@ -119,6 +118,4 @@ class AgentCare:
             config={"configurable": {"thread_id": thread_id}},
         )
 
-
-# Build once at import; endpoints import this instance.
 agentcare = AgentCare()

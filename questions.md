@@ -312,3 +312,43 @@ Goal: memory *within* a conversation, but a *fresh* conversation each new sessio
 **Q: Why so many red squiggles / type errors when the code runs fine?**
 
 They're the editor's **static type checker** (Pylance/pyright), not runtime errors — Python doesn't enforce type hints at runtime, so none of them stop the app. Most come from `WorkflowState` fields typed `str | None` (they start None, get filled as the graph runs) being passed to functions wanting `str` — the checker can't *prove* they're set by then, even though they always are. Others come from loosely-typed Supabase `.data` and LangChain's flexible `config`/message args. Fix: set `"python.analysis.typeCheckingMode": "basic"` in `.vscode/settings.json` — it drops the "can't prove not-None" noise while still catching genuine mistakes (undefined names, real crashes). Type errors ≠ bugs; they're "the checker can't verify this."
+
+---
+
+## Classes: what belongs on `self` vs. what's per-call
+
+**Q: The graph class had bugs — what was the actual mistake?**
+
+One principle, several symptoms: confusing **what belongs to the object (`self`)** with **per-call data**. `self` holds things built **once** and shared across every method call for the object's lifetime — config, connections, the compiled graph. It must NOT hold per-request data that changes each call. The bug was putting `state` (different on every request) into the object: `__init__(self, state)`, `self.state`, `StateGraph(self.state)`. State isn't a property of the machine — it's what you *run through* it each time, so it belongs as a **method parameter** (`invoke(self, state, thread_id)`), never on `self`.
+
+Analogy: a class is a coffee machine. `self` = the machine's parts (heating element, water line), assembled once, used for every cup — that's `self.checkpointer` and `self.workflow`, correctly built once in `__init__`. The coffee *order* (this cup) is not part of the machine; it's an argument you pass when you press "make." `__init__(self, state)` welded one order into the machine, so it could only ever make that one cup.
+
+The test for any attribute you're about to write as `self.x`: **same across every use, set up once → `self`; changes per call / is the thing being processed right now → method parameter.** `workflow`/`checkpointer` pass (build once, reuse). `state`, request bodies, IDs-for-this-operation fail → they're parameters.
+
+---
+
+**Q: Why was using `self.state` inside the routing function wrong even if state were stored?**
+
+LangGraph calls a conditional-edge function **per step, with the live state as its argument**. Using `self.state` (a copy frozen at construction) ignores the fresh data every node just updated, so routing decisions run on stale info. Same rule again: **per-call data comes from the parameter the framework hands you, not from `self`.** The routing function must read its `state` argument.
+
+---
+
+**Q: `_build_graph` compiled the graph but it "disappeared" — why?**
+
+`workflow = graph.compile(...)` assigned to a bare **local variable**, which vanishes when the method returns. Anything you need after a method ends must be persisted — `return` it, or assign to `self.workflow`. Computing something and not storing/returning it means it's thrown away.
+
+---
+
+## Mistake patterns & how to catch them (session retrospective)
+
+**Q: What repeating mistake patterns showed up, and the habit that catches each?**
+
+1. **"It parses" ≠ "it works" — run every piece against real data.** Most bugs were invisible to reading but obvious on execution (`isinstance(messages,…)` vs `message`, `response.too_calls`, a node returning `None`, `setup_checkpointer()` returning `None`). Habit: after writing a function, actually call it once and read the error. Don't advance past unrun code.
+2. **Read a function's contract before calling it** — args required, value returned, what it raises. Bugs: `log_audit_event` missing required `entity_type`; assigning a `None`-returning function to `checkpointer`; `.single()` raising instead of returning None.
+3. **After copy-paste, re-read every line for the new context.** Pasted code carries old assumptions (`current_step="routing"` inside safety, stale imports, an eager default arg).
+4. **Know which id you're holding.** The `actor_id` FK error happened twice — `patient_profiles.id` vs `profiles.id`. When a param says "id," ask which: login identity (`user_id` = `profiles.id`) or record (`patient_profiles.id`).
+5. **Model the lifecycle first: when does this run, how often, decision or mechanics?** The architectural misses (thread_id = patient_id, state into graph `__init__`, `self.state` in routing, audit-as-LLM-tool, "wait 24h in a node") all trace to skipping this.
+6. **Every node returns a dict; every `except` stops or recovers** — never fall through silently.
+7. **Once a migration is applied, never edit it — write a new one.**
+
+The meta-point: the write → run → read-error → fix loop *is* the skill; nobody writes it clean first try. The goal isn't fewer mistakes, it's shortening the gap between making one and noticing it — and habit #1 (run it immediately) shortens that most.
