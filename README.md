@@ -1,20 +1,20 @@
 # AgentCare
 
-AgentCare is an agentic AI assistant for hospital **administrative** workflows: greeting and identifying patients, routing requests to the right department, checking doctor availability, booking / rescheduling / cancelling appointments, filing supporting documents, scheduling reminders, and escalating emergencies to a human — all through a natural, streaming chat interface.
+AgentCare is an agentic AI assistant for hospital **administrative** workflows: greeting and identifying patients, routing requests to the right department, checking doctor availability, booking / rescheduling / cancelling appointments, filing supporting documents, scheduling reminders, and escalating emergencies to a human - all through a natural, streaming chat interface.
 
 ## What this is *not*
 
-AgentCare never diagnoses conditions, interprets results, prescribes medication, or recommends dosages, and it does not replace a healthcare professional. Its scope is strictly administrative. A request for clinical judgment is **politely declined**, and a genuine emergency is **escalated to a human** — neither is ever handled autonomously.
+AgentCare never diagnoses conditions, interprets results, prescribes medication, or recommends dosages, and it does not replace a healthcare professional. Its scope is strictly administrative. A request for clinical judgment is **politely declined**, and a genuine emergency is **escalated to a human** - neither is ever handled autonomously.
 
 ## Highlights
 
-- **Single-call Coordinator that is also the safety gate** — one LLM decision per message: escalate an emergency, decline medical advice / reply conversationally, or route a real task to a specialist.
+- **Single-call Coordinator that is also the safety gate** - one LLM decision per message: escalate an emergency, decline medical advice / reply conversationally, or route a real task to a specialist.
 - **Specialist agents** for department routing, appointments (a ReAct tool-loop with a human-in-the-loop slot picker), documents, and follow-up reminders.
 - **Human-in-the-loop** slot selection via LangGraph `interrupt()` / resume.
-- **Durable, resumable state** — every conversation is a LangGraph thread persisted to Postgres, so a paused booking survives a page reload.
-- **Short-term memory** — the recent transcript is fed back into the agents so follow-ups like *"cancel the second one"* or *"what's the doctor's name?"* resolve in context.
-- **Vanilla JS chat UI** — streaming (typewriter) replies, markdown, conversation history, and document upload (📎).
-- **Full audit trail** — every classification, booking, escalation, and document write is logged.
+- **Durable, resumable state** - every conversation is a LangGraph thread persisted to Postgres, so a paused booking survives a page reload.
+- **Short-term memory** - the recent transcript is fed back into the agents so follow-ups like *"cancel the second one"* or *"what's the doctor's name?"* resolve in context.
+- **Vanilla JS chat UI** - streaming (typewriter) replies, markdown, conversation history, and document upload (📎).
+- **Full audit trail** - every classification, booking, escalation, and document write is logged.
 
 ## Architecture
 
@@ -60,14 +60,14 @@ graph TD;
 
 All tables live in [`supabase/migrations/`](supabase/migrations/), applied in order:
 
-- `profiles` — one row per login identity (patient / doctor / staff-admin), 1:1 with Supabase `auth.users`
-- `patient_profiles` / `staff_profiles` — role-specific detail
-- `departments`, `doctors` — hospital structure
-- `appointment_slots`, `appointments` — scheduling
-- `patient_documents` — uploaded-document metadata (files live in a private Storage bucket)
-- `workflow_runs` — persisted state per conversation
-- `chat_messages` — the clean conversation transcript (history view + short-term memory)
-- `reminders`, `escalations`, `audit_events` — follow-ups, human review, and the audit trail
+- `profiles` - one row per login identity (patient / doctor / staff-admin), 1:1 with Supabase `auth.users`
+- `patient_profiles` / `staff_profiles` - role-specific detail
+- `departments`, `doctors` - hospital structure
+- `appointment_slots`, `appointments` - scheduling
+- `patient_documents` - uploaded-document metadata (files live in a private Storage bucket)
+- `workflow_runs` - persisted state per conversation
+- `chat_messages` - the clean conversation transcript (history view + short-term memory)
+- `reminders`, `escalations`, `audit_events` - follow-ups, human review, and the audit trail
 
 **Auth model:** patients self-register (a trigger hard-codes their role to `patient`); doctor/staff/admin accounts are provisioned only by an existing admin. The backend uses the service-role key; the browser only ever holds the publishable key (for Auth).
 
@@ -116,7 +116,7 @@ supabase db reset       # applies every migration + seed data
 ```bash
 uv run uvicorn app.main:app --reload
 ```
-Open **http://localhost:8000** — the chat UI is served by the same app. (The frontend's Supabase URL/publishable key are set at the top of [`frontend/app.js`](frontend/app.js).)
+Open **http://localhost:8000** - the chat UI is served by the same app. (The frontend's Supabase URL/publishable key are set at the top of [`frontend/app.js`](frontend/app.js).)
 
 ## Testing
 
@@ -131,4 +131,4 @@ uv run pytest -m llm       # agent-behaviour tests (real OpenAI calls)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
