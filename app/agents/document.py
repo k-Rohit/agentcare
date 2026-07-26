@@ -1,35 +1,59 @@
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 from app.agents.state import WorkflowState
-from app.tools.documents import store_document
+from app.services.llm import get_chat_model
+from app.services.documents import get_documents, store_document
 from app.tools.audit import log_audit_event
-from app.tools.workflow import update_workflow_run
+from app.services.workflow import update_workflow_run
 from app.agents.prompts import DOCUMENT_AGENT_PROMPT
 from app.schemas.agents import ClassifyDocument
-from config import get_settings
 from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
-llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
-structured_llm = llm.with_structured_output(ClassifyDocument)
+structured_llm = get_chat_model().with_structured_output(ClassifyDocument)
+
+
+def _format_document_list(documents: list[dict]) -> str:
+    if not documents:
+        return "I don't see any reports uploaded under your record yet."
+
+    lines = []
+    for document in documents:
+        document_type = (document.get("document_type") or "document").replace("_", " ")
+        file_path = document.get("file_path") or "uploaded file"
+        filename = file_path.rsplit("/", 1)[-1]
+        lines.append(f"- {document_type}: {filename}")
+    return "Here are the reports I found under your record:\n" + "\n".join(lines)
+
 
 def document_node(state: WorkflowState):
     """
-    This node is responsible for handling the uploads of the document.
+    This node handles document uploads and document-list questions.
     """
-    workflow_run_id = state.get('workflow_run_id',None)
-    document_path = state.get('document_path',None)
-    patient_id = state['patient_id']
+    workflow_run_id = state.get("workflow_run_id", None)
+    document_path = state.get("document_path", None)
+    patient_id = state["patient_id"]
+
     if not document_path:
-        raise RuntimeError("No document found to upload")
+        documents = get_documents(patient_id)
+        update_workflow_run(
+            workflow_run_id,
+            current_step="document",
+            state={"document_count": len(documents)},
+            status="completed",
+        )
+        return {
+            "messages": [AIMessage(content=_format_document_list(documents))],
+            "delegated_to": None,
+            "status": "completed",
+        }
     
     # classify the document type
     response: ClassifyDocument = structured_llm.invoke([
-    SystemMessage(content=DOCUMENT_AGENT_PROMPT),
-    HumanMessage(content=f"Classify this document.\nFilename: {state['document_filename']}"),]) # type: ignore
+        SystemMessage(content=DOCUMENT_AGENT_PROMPT),
+        HumanMessage(content=f"Classify this document.\nFilename: {state['document_filename']}"),
+    ])  # type: ignore
 
     document_type = response.classification
     summary = response.summary
@@ -52,10 +76,11 @@ def document_node(state: WorkflowState):
         workflow_run_id,
         current_step="document",
         state={"document_id": stored["id"], "document_type": document_type},
+        status="completed",
     )
 
     confirmation = AIMessage(content=f"I've filed your {document_type.replace('_', ' ')} under your record.")
-    return {"messages": [confirmation], "delegated_to": None}
+    return {"messages": [confirmation], "delegated_to": None, "status": "completed"}
     
 
     

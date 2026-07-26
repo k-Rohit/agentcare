@@ -73,12 +73,11 @@ def _to_response(conversation_id, result):
                 "department_message": result.get("routing_note")}
 
     status = result.get("status")
-    if status == "blocked":
-        return {"conversation_id": conversation_id, "status": "blocked",
-    "reply": "I can't help with that — it's asking for medical advice.", "interrupt": None}
     if status == "escalated":
+        # The coordinator wrote the emergency reply itself (LLM), so show that.
         return {"conversation_id": conversation_id, "status": "escalated",
-    "reply": "This has been escalated to a staff member for review.", "interrupt": None}
+                "reply": _reply(result.get("messages", [])) or "This has been flagged for urgent staff attention.",
+                "interrupt": None}
 
     return {"conversation_id": conversation_id, "status": "completed",
     "reply": _reply(result.get("messages", [])), "interrupt": None}
@@ -89,8 +88,7 @@ def _reply(messages):
     confirmation (doctor + time) AND the reminder note, not just the last one."""
     parts = [m.content for m in messages
              if isinstance(m, AIMessage) and m.content and not m.tool_calls]
-    return "\n\n".join(parts) if parts else None
-
+    return "\n\n".join(parts) if parts else None # type: ignore
         
         
         

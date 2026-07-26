@@ -1,11 +1,11 @@
 import json
 
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langgraph.types import interrupt
 
 from app.agents.prompts import APPOINTMENT_AGENT_PROMPT
 from app.agents.state import WorkflowState
+from app.services.llm import get_chat_model
 from app.tools.audit import log_audit_event
 from app.services.workflow import update_workflow_run
 from app.tools.appointments import (
@@ -17,11 +17,8 @@ from app.tools.appointments import (
     cancel_appointment,
 )
 
-from config import get_settings
-
-# define the llm to be used
-settings = get_settings()
-llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
+# the shared LLM client
+llm = get_chat_model()
 
 
 def select_appointment_slot(options: list[dict]) -> str:

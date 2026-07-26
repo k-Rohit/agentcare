@@ -1,12 +1,11 @@
-from langchain_openai import ChatOpenAI
 from app.agents.prompts import ROUTING_AGENT_PROMPT
 from app.agents.state import WorkflowState
 from app.schemas.agents import RoutingDecision
+from app.services.llm import get_chat_model
 from app.tools.audit import log_audit_event
 from app.tools.departments import get_departments
 from app.tools.escalations import create_escalation
-from app.tools.workflow import update_workflow_run
-from config import get_settings
+from app.services.workflow import update_workflow_run
 
 
 def routing_node(state: WorkflowState) -> dict:
@@ -30,9 +29,7 @@ def routing_node(state: WorkflowState) -> dict:
         describe a medical emergency."""
         return create_escalation(workflow_run_id=workflow_run_id, reason=reason)
 
-    settings = get_settings()
-    llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
-    llm_with_tools = llm.bind_tools([escalate_request, RoutingDecision])
+    llm_with_tools = get_chat_model().bind_tools([escalate_request, RoutingDecision])
 
     response = llm_with_tools.invoke([
         ("system", ROUTING_AGENT_PROMPT),

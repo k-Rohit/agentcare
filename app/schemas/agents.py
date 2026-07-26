@@ -3,10 +3,17 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-class RequestIntent(BaseModel):
-    """The Coordinator's classification of a request's high-level intent."""
-    intent_type: Literal["new_booking", "manage_appointment", "document", "other"]
+class CoordinatorDecision(BaseModel):
+    """The Coordinator's single decision about a patient message — it is also the
+    safety gate, so this one call decides everything: route to a specialist,
+    reply directly, or escalate an emergency."""
+    action: Literal["book", "manage", "document", "reply", "escalate"]
     summary: str
+    """A one-sentence, purely administrative summary (used as the conversation title)."""
+    reply: str = ""
+    """What to say to the patient — filled for "reply" (greeting/thanks/small talk,
+    or a polite decline of a medical-advice request) and "escalate" (a calm
+    message telling them to seek urgent help). Ignored for the task actions."""
 
 
 class RoutingDecision(BaseModel):
@@ -19,16 +26,6 @@ class RoutingDecision(BaseModel):
     """A warm, natural one-sentence message to show the patient — it names the
     department and hints that available times are coming next. Friendly and
     administrative only; never diagnoses, interprets symptoms, or gives advice."""
-
-
-class SafetyAllow(BaseModel):
-    """Allow the request to proceed as normal administrative handling."""
-    reason: str
-
-
-class SafetyBlock(BaseModel):
-    """Block the request because it asks the system for medical advice/diagnosis/dosage."""
-    reason: str
 
 
 class AppointmentResponse(BaseModel):

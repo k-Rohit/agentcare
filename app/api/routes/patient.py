@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from app.tools.patients import get_or_create_patient_profile
-from app.tools.appointments import get_patient_appointments
-from app.tools.documents import get_documents
+from app.services.appointments import get_patient_appointments
+from app.services.documents import get_documents, upload_document, get_document_url
 from app.tools.reminders import get_patient_reminders
 from app.tools.chat_messages import get_chat_messages
 from app.services.supabase.factory import get_supabase_client
@@ -36,6 +38,39 @@ def appointments(patient_id: str = Depends(get_current_patient_id)):
 def documents(patient_id: str = Depends(get_current_patient_id)):
     """The logged-in patient's uploaded documents."""
     return get_documents(patient_id)
+
+
+@router.post("/documents/upload")
+async def upload(file: UploadFile = File(...), patient_id: str = Depends(get_current_patient_id)):
+    """Upload a file's bytes to the private bucket and return its storage path.
+
+    The browser can't write to the private bucket (it only holds the publishable
+    key), so the upload goes through here with the service-role key. The path is
+    then sent to /chat as document_path, which triggers the Document Agent.
+    """
+    content = await file.read()
+    # namespace with a short random prefix so re-uploading the same filename
+    # doesn't collide in storage; keep the original name for classification.
+    stored_name = f"{uuid4().hex[:8]}_{file.filename}"
+    path = upload_document(patient_id, stored_name, content)
+    return {"path": path, "filename": file.filename}
+
+
+@router.get("/documents/{document_id}/url")
+def document_url(document_id: str, patient_id: str = Depends(get_current_patient_id)):
+    """A temporary signed URL to view one of the patient's own documents."""
+    rows = (
+        get_supabase_client()
+        .table("patient_documents")
+        .select("file_path")
+        .eq("id", document_id)
+        .eq("patient_id", patient_id)  # ownership check
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"url": get_document_url(rows[0]["file_path"])}
 
 
 @router.get("/reminders")
@@ -89,4 +124,3 @@ def delete_conversation(conversation_id: str, patient_id: str = Depends(get_curr
     client.table("escalations").delete().eq("workflow_run_id", conversation_id).execute()
     client.table("workflow_runs").delete().eq("id", conversation_id).execute()
     return {"deleted": conversation_id}
-
