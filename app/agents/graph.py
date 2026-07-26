@@ -8,7 +8,6 @@ from app.agents.checkpointer import get_checkpointer, setup_checkpointer
 from app.agents.document import document_node
 from app.agents.followup import followup_node
 from app.agents.routing import routing_node
-from app.agents.safety import safety_node
 from app.agents.state import WorkflowState
 
 class AgentCare:
@@ -26,11 +25,11 @@ class AgentCare:
     def _route_delegation(self, state: WorkflowState) -> str:
         """Turn the live state's delegation into the next node name.
 
-        Reads the state LangGraph passes in at runtime (never a stored copy), so
-        it sees each node's latest updates. Centralising the branching here keeps
-        the edges simple as the workflow grows.
+        Used both straight out of the coordinator and after routing. If the
+        coordinator already finished the turn (replied or escalated), stop;
+        otherwise send the request to whichever specialist it delegated to.
         """
-        if state.get("status") in {"blocked", "escalated", "completed"}:
+        if state.get("status") in {"escalated", "completed"}:
             return END
 
         delegated_to = state.get("delegated_to")
@@ -45,19 +44,11 @@ class AgentCare:
 
         return END
 
-    def _after_coordinator(self, state: WorkflowState) -> str:
-        """Chat is fully answered by the coordinator (status='completed') → end.
-        Every task request must pass through the Safety gate first."""
-        if state.get("status") == "completed":
-            return END
-        return "safety_node"
-
     def _build_graph(self):
         graph = StateGraph(WorkflowState)
 
-        # nodes
+        # nodes — the coordinator is also the safety gate, so there is no separate node
         graph.add_node("coordinator_node", coordinator_node)
-        graph.add_node("safety_node", safety_node)
         graph.add_node("router_node", routing_node)
         graph.add_node("appointment_agent_node", appointment_agent_node)
         graph.add_node("appointment_finalize_node", appointment_finalize_node)
@@ -65,17 +56,11 @@ class AgentCare:
         graph.add_node("followup_node", followup_node)
         graph.add_node("tools", ToolNode(tools))
 
-        # entry: coordinator -> safety (unless the coordinator already answered a chat)
+        # entry: coordinator decides everything, then either ends (reply/escalate)
+        # or hands off to a specialist.
         graph.add_edge(START, "coordinator_node")
         graph.add_conditional_edges(
             "coordinator_node",
-            self._after_coordinator,
-            {"safety_node": "safety_node", END: END},
-        )
-
-        # after safety, branch on the coordinator's delegation (or stop if blocked/escalated)
-        graph.add_conditional_edges(
-            "safety_node",
             self._route_delegation,
             {
                 "router_node": "router_node",
