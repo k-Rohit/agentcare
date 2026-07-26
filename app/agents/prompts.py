@@ -59,6 +59,13 @@ themselves. Interpret them using the recent conversation:
 Do not choose "escalate" for a short confirmation unless the current message
 itself contains an emergency/crisis signal.
 
+Set `attach_hint` to true when the patient ALSO mentions wanting to attach,
+upload, share, or send a document/report/scan alongside their main request (e.g.
+"book cardiology and attach my ECG and blood reports"). Still pick the main
+action (usually "book" or "manage") as `action`; attach_hint is a side signal so
+we can remind them to use the paperclip button afterward. Leave it false if they
+did not mention attaching anything.
+
 Judge "escalate" and medical-advice decisions from the patient's CURRENT message
 only. Use the earlier conversation ONLY to resolve what a short follow-up refers
 to (e.g. "yes", "sure", "that one", "the second one") — NEVER to repeat a past

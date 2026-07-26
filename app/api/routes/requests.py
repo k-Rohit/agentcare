@@ -47,6 +47,7 @@ def chat(request: SubmitRequest, current_user: dict = Depends(get_current_user))
         "slot_id": None, "appointment_id": None,
         "escalation_reason": None, "status": "in_progress",
         "messages": [], "delegated_to": None, "slot_choice": None,
+        "routing_note": None, "attach_hint": False,
         "document_path": request.document_path,
         "document_filename": request.document_filename,
     }
@@ -79,8 +80,14 @@ def _to_response(conversation_id, result):
                 "reply": _reply(result.get("messages", [])) or "This has been flagged for urgent staff attention.",
                 "interrupt": None}
 
+    reply = _reply(result.get("messages", []))
+    # Multi-intent: the patient also asked to attach a document alongside the task.
+    # We can't attach for them, so nudge them to the paperclip once it's done.
+    if reply and result.get("attach_hint"):
+        reply += ("\n\nYou can attach your documents (like your ECG or blood reports) "
+                  "with the 📎 button, and I'll file them to your record.")
     return {"conversation_id": conversation_id, "status": "completed",
-    "reply": _reply(result.get("messages", [])), "interrupt": None}
+    "reply": reply, "interrupt": None}
 
 
 def _reply(messages):

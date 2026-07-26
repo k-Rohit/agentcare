@@ -23,7 +23,7 @@ def _turn(patient_id: str, workflow_run_id: str, **decision) -> dict:
         "patient_id": patient_id, "workflow_run_id": workflow_run_id,
         "department": None, "department_id": None, "slot_id": None, "slot_choice": None,
         "appointment_id": None, "escalation_reason": None, "status": None,
-        "delegated_to": None, "routing_note": None,
+        "delegated_to": None, "routing_note": None, "attach_hint": False,
         **decision,
     }
 
@@ -74,6 +74,8 @@ def coordinator_node(state: WorkflowState) -> dict:
         return _turn(patient["id"], run_id, status="completed",
                      messages=clear + [AIMessage(content=decision.reply)])
 
-    # A real task → hand off to the specialist.
+    # A real task → hand off to the specialist. Carry the attach hint so we can
+    # nudge the patient toward the paperclip once the task is done.
     record(decision.action, decision.summary)
-    return _turn(patient["id"], run_id, delegated_to=ACTION_TO_NEXT_NODE[decision.action], messages=clear)
+    return _turn(patient["id"], run_id, delegated_to=ACTION_TO_NEXT_NODE[decision.action],
+                 attach_hint=decision.attach_hint, messages=clear)

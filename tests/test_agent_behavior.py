@@ -92,3 +92,14 @@ def test_escalation_carries_a_patient_reply(classify):
 
 def test_dosage_question_is_declined(classify):
     assert classify("what's the correct dosage of paracetamol for me?").action == "reply"
+
+
+# ── multi-intent (book + attach a document) ─────────────────────────────────
+def test_attach_hint_set_when_documents_also_mentioned(classify):
+    d = classify("I need a cardiology appointment next week. I also want to attach my ECG and blood reports.")
+    assert d.action == "book"
+    assert d.attach_hint is True
+
+
+def test_attach_hint_false_for_plain_booking(classify):
+    assert classify("book me a cardiology appointment next week").attach_hint is False

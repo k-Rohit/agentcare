@@ -36,3 +36,6 @@ class WorkflowState(TypedDict):
     """The routing agent's warm, patient-facing line naming the chosen department,
     shown just before the slot picker. Set only when routing runs this turn;
     reset each turn by the coordinator."""
+    attach_hint: bool
+    """True when the patient also asked to attach a document alongside their main
+    request; used to nudge them toward the paperclip button once the task is done."""

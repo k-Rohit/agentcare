@@ -11,9 +11,14 @@ class CoordinatorDecision(BaseModel):
     summary: str
     """A one-sentence, purely administrative summary (used as the conversation title)."""
     reply: str = ""
-    """What to say to the patient — filled for "reply" (greeting/thanks/small talk,
+    """What to say to the patient - filled for "reply" (greeting/thanks/small talk,
     or a polite decline of a medical-advice request) and "escalate" (a calm
     message telling them to seek urgent help). Ignored for the task actions."""
+    attach_hint: bool = False
+    """True when the patient ALSO mentions wanting to attach/upload/share a
+    document or report alongside their main request (e.g. "book cardiology and
+    attach my ECG"). Lets us nudge them to use the paperclip button after the
+    main task, without derailing into a separate document flow."""
 
 
 class RoutingDecision(BaseModel):
