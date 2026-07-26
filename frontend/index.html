@@ -82,10 +82,14 @@
       </div>
 
       <form id="composer" class="composer">
+        <div id="attach-chip" class="attach-chip hidden"></div>
         <div class="composer-box">
+          <button type="button" id="attach-btn" class="btn-attach" aria-label="Attach a document" title="Attach a document">📎</button>
           <textarea id="composer-input" rows="1" placeholder="Describe what you need…" autocomplete="off"></textarea>
           <button type="submit" class="btn-send" aria-label="Send">➤</button>
         </div>
+        <input type="file" id="file-input" hidden
+               accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.txt,.doc,.docx" />
       </form>
     </main>
   </div>

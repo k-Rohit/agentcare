@@ -187,16 +187,33 @@ function inlineMd(s) {
 }
 function renderMarkdown(text) {
   const lines = escapeHtml(text).split(/\n/);
-  let html = "", list = null, buf = [];
+  let html = "", list = null, items = [];
   const flush = () => {
-    if (list) { html += `<${list}>` + buf.map((li) => `<li>${inlineMd(li)}</li>`).join("") + `</${list}>`; buf = []; list = null; }
+    if (!list) return;
+    html += `<${list}>` + items.map((it) =>
+      `<li${it.value ? ` value="${it.value}"` : ""}>${it.parts.map(inlineMd).join("<br>")}</li>`
+    ).join("") + `</${list}>`;
+    items = []; list = null;
   };
   for (const line of lines) {
-    const ol = line.match(/^\s*\d+[.)]\s+(.*)/);
+    const ol = line.match(/^\s*(\d+)[.)]\s+(.*)/);   // captures the number
     const ul = line.match(/^\s*[-*•]\s+(.*)/);
-    if (ol) { if (list && list !== "ol") flush(); list = "ol"; buf.push(ol[1]); }
-    else if (ul) { if (list && list !== "ul") flush(); list = "ul"; buf.push(ul[1]); }
-    else { flush(); if (line.trim()) html += `<p>${inlineMd(line)}</p>`; }
+    if (ol) {
+      if (list && list !== "ol") flush();
+      list = "ol"; items.push({ value: ol[1], parts: [ol[2]] });
+    } else if (ul && list !== "ol") {
+      if (list && list !== "ul") flush();
+      list = "ul"; items.push({ parts: [ul[1]] });
+    } else if (line.trim() === "") {
+      flush();
+    } else if (list && items.length) {
+      // a detail line under the current item (e.g. Date / Status / Reason, or a
+      // sub-bullet under a numbered appointment) — keep it attached, don't split
+      items[items.length - 1].parts.push((ul ? ul[1] : line).trim());
+    } else {
+      flush();
+      html += `<p>${inlineMd(line)}</p>`;
+    }
   }
   flush();
   return html;
@@ -312,8 +329,6 @@ async function handleResponse(resp) {
       || (resp.department ? `Sure — let's find you an opening in ${resp.department}. 🩺` : null);
     if (note) await streamMessage(note);
     renderSlots(resp.interrupt.options || []);
-  } else if (resp.status === "blocked") {
-    await streamMessage(resp.reply, "blocked");
   } else if (resp.status === "escalated") {
     await streamMessage(resp.reply, "escalated");
   } else {
@@ -322,14 +337,20 @@ async function handleResponse(resp) {
   loadConversations();
 }
 
-async function sendMessage(text) {
-  addMessage("user", text);
+async function sendMessage(text, attachment) {
+  const shown = attachment ? `${text ? text + "\n" : ""}📎 ${attachment.filename}` : text;
+  addMessage("user", shown);
   showTyping();
   try {
-    const resp = await api("/chat", {
-      method: "POST",
-      body: JSON.stringify({ message: text, conversation_id: conversationId }),
-    });
+    const body = {
+      message: text || `Please file this document: ${attachment.filename}`,
+      conversation_id: conversationId,
+    };
+    if (attachment) {
+      body.document_path = attachment.path;
+      body.document_filename = attachment.filename;
+    }
+    const resp = await api("/chat", { method: "POST", body: JSON.stringify(body) });
     await handleResponse(resp);
   } catch (err) {
     hideTyping();
@@ -351,6 +372,63 @@ async function resume(slotId, label) {
   }
 }
 
+/* ─────────── document attachment ─────────── */
+let pendingAttachment = null;
+const fileInput = document.getElementById("file-input");
+const attachChip = document.getElementById("attach-chip");
+
+async function uploadFile(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  // multipart — let the browser set Content-Type (with boundary); don't use api()
+  const res = await fetch(API_BASE + "/documents/upload", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  if (res.status === 401) { logout(); throw new Error("Session expired"); }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.detail) || "Upload failed");
+  return data; // { path, filename }
+}
+
+function renderAttachChip(name, uploading) {
+  attachChip.classList.remove("hidden");
+  attachChip.innerHTML = "";
+  const label = document.createElement("span");
+  label.textContent = (uploading ? "⏳ Uploading " : "📎 ") + name;
+  attachChip.appendChild(label);
+  if (!uploading) {
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "chip-remove";
+    x.textContent = "✕";
+    x.title = "Remove";
+    x.addEventListener("click", clearAttachment);
+    attachChip.appendChild(x);
+  }
+}
+function clearAttachment() {
+  pendingAttachment = null;
+  attachChip.classList.add("hidden");
+  attachChip.innerHTML = "";
+}
+
+document.getElementById("attach-btn").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files[0];
+  fileInput.value = "";  // let the same file be picked again later
+  if (!file) return;
+  renderAttachChip(file.name, true);
+  try {
+    pendingAttachment = await uploadFile(file);
+    renderAttachChip(pendingAttachment.filename, false);
+  } catch (err) {
+    clearAttachment();
+    addMessage("assistant", "Upload failed: " + err.message);
+  }
+});
+
 /* ─────────── composer (auto-grow textarea, Enter to send) ─────────── */
 const composerInput = document.getElementById("composer-input");
 function autoGrow() {
@@ -359,10 +437,12 @@ function autoGrow() {
 }
 function submitComposer() {
   const text = composerInput.value.trim();
-  if (!text) return;
+  if (!text && !pendingAttachment) return;   // allow sending an attachment alone
+  const attachment = pendingAttachment;
   composerInput.value = "";
   autoGrow();
-  sendMessage(text);
+  clearAttachment();
+  sendMessage(text, attachment);
 }
 document.getElementById("composer").addEventListener("submit", (e) => { e.preventDefault(); submitComposer(); });
 composerInput.addEventListener("input", autoGrow);
