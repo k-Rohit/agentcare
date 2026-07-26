@@ -7,7 +7,7 @@ from langgraph.types import interrupt
 from app.agents.prompts import APPOINTMENT_AGENT_PROMPT
 from app.agents.state import WorkflowState
 from app.tools.audit import log_audit_event
-from app.tools.workflow import update_workflow_run
+from app.services.workflow import update_workflow_run
 from app.tools.appointments import (
     get_available_slots,
     book_appointment,
