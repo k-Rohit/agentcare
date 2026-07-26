@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.services.supabase.factory import get_supabase_client
-from app.tools.appointments import get_appointment_details
+from app.services.appointments import get_appointment_details
 from app.tools.patients import get_patient_email
 from app.tools.reminders import mark_reminder_sent
 from app.tools.notifications import send_email

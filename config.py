@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     reminder_from_email: str = "onboarding@resend.dev"
 
+    documents_bucket: str = "patient-documents"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
