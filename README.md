@@ -30,33 +30,7 @@ Conversational safety in one thread - a greeting, a politely declined medical-ad
 
 High-level components and how they connect. The agent-internal flow is in the [workflow graph](#workflow-graph) further down.
 
-```mermaid
-flowchart LR
-  U(["Patient"]) --> FE["Frontend<br/>HTML / CSS / JS"]
-
-  subgraph BE ["Backend - FastAPI"]
-    API["API routes<br/>/agentcare/api/v1"]
-    AG["Agent Layer<br/>LangGraph"]
-    API --> AG
-  end
-  CFG[["Pydantic Settings"]] -.->|"config"| BE
-
-  subgraph SUPA ["Supabase"]
-    AUTH["Auth (JWT)"]
-    PG[("Postgres<br/>data + checkpointer")]
-    ST[("Storage<br/>documents")]
-  end
-
-  OAI[("OpenAI")]
-  RES[("Resend<br/>email")]
-
-  FE -->|"login (publishable key)"| AUTH
-  FE <-->|"Bearer JWT"| API
-  AG -->|"LLM calls"| OAI
-  BE -->|"read / write (service-role)"| PG
-  BE -->|"documents"| ST
-  BE -->|"reminders"| RES
-```
+![System architecture](assets/architecture.png)
 
 ## Architecture
 
