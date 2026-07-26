@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from postgrest.exceptions import APIError
 
 from app.services.supabase.factory import get_supabase_client
@@ -23,12 +25,15 @@ def list_active_doctor_ids(department_id: str) -> list[str]:
 def list_available_slots_for_doctors(doctor_ids: list[str]) -> list[dict]:
     if not doctor_ids:
         return []
+    now = datetime.now(timezone.utc).isoformat()
     response = (
         get_supabase_client()
         .table("appointment_slots")
         .select("*")
         .in_("doctor_id", doctor_ids)
         .eq("status", "available")
+        .gte("start_time", now)  # only offer upcoming slots, never past ones
+        .order("start_time")
         .execute()
     )
     return response.data or []
