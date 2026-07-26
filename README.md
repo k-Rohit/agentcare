@@ -1,7 +1,7 @@
 # AgentCare
 
 AgentCare is an agentic AI assistant for hospital **administrative** workflows: greeting and identifying patients, routing requests to the right department, checking doctor availability, booking / rescheduling / cancelling appointments, filing supporting documents, scheduling reminders, and escalating emergencies to a human - all through a natural, streaming chat interface.
-
+ 
 ## What this is *not*
 
 AgentCare never diagnoses conditions, interprets results, prescribes medication, or recommends dosages, and it does not replace a healthcare professional. Its scope is strictly administrative. A request for clinical judgment is **politely declined**, and a genuine emergency is **escalated to a human** - neither is ever handled autonomously.
