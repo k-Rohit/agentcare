@@ -8,7 +8,7 @@ from app.agents.state import WorkflowState
 from app.services.llm import get_chat_model
 from app.tools.audit import log_audit_event
 from app.services.workflow import update_workflow_run
-from app.tools.appointments import (
+from app.services.appointments import (
     get_available_slots,
     book_appointment,
     get_appointment_details,
