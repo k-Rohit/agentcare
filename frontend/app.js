@@ -291,8 +291,11 @@ function renderSlots(options) {
   label.textContent = "Here are the available times — pick one:";
   wrap.appendChild(label);
 
+  // sort chronologically, and show each time once (multiple doctors can have the
+  // same slot time — the patient picks a time, whichever doctor is fine)
+  const sorted = [...options].sort((a, b) => new Date(a.start) - new Date(b.start));
   const byDay = {};
-  options.forEach((o) => { (byDay[fmtDay(o.start)] ||= []).push(o); });
+  sorted.forEach((o) => { (byDay[fmtDay(o.start)] ||= []).push(o); });
 
   Object.entries(byDay).forEach(([day, opts]) => {
     const d = document.createElement("div");
@@ -301,10 +304,14 @@ function renderSlots(options) {
     wrap.appendChild(d);
     const row = document.createElement("div");
     row.className = "slot-row";
+    const seenTimes = new Set();
     opts.forEach((o) => {
+      const time = fmtTime(o.start);
+      if (seenTimes.has(time)) return;   // dedupe the repeated time
+      seenTimes.add(time);
       const b = document.createElement("button");
       b.className = "slot-btn";
-      b.textContent = fmtTime(o.start);
+      b.textContent = time;
       b.addEventListener("click", () => {
         wrap.querySelectorAll(".slot-btn").forEach((x) => (x.disabled = true));
         const label = `${fmtDay(o.start)}, ${fmtTime(o.start)}`;

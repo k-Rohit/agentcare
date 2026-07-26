@@ -11,20 +11,25 @@ Run:  uv run python -m app.services.supabase.db_ops.seed_doctors_slots
 """
 
 from collections import Counter
+from datetime import date, timedelta
 
 from app.services.supabase.factory import get_supabase_client
 from app.services.supabase.auth_ops import create_auth_account
 
 DOCTORS_PER_DEPT = 2
-
-# Days (relative to a fixed near-future window) and times each doctor is open.
-SLOT_DAYS = ["2026-07-23", "2026-07-24", "2026-07-25"]
+SLOT_DAYS_AHEAD = 7  # how many upcoming days to open slots for
 SLOT_TIMES = [  # (start_h, start_m, end_h, end_m)
     (10, 0, 10, 30),
     (10, 30, 11, 0),
     (11, 0, 11, 30),
     (14, 0, 14, 30),
 ]
+
+
+def _upcoming_days() -> list[str]:
+    """The next SLOT_DAYS_AHEAD calendar days, starting tomorrow (always future)."""
+    today = date.today()
+    return [(today + timedelta(days=i + 1)).isoformat() for i in range(SLOT_DAYS_AHEAD)]
 
 DOCTOR_NAMES = [
     "Dr. Aarav Sharma", "Dr. Vivaan Reddy", "Dr. Aditya Nair", "Dr. Diya Mehta",
@@ -44,15 +49,25 @@ def _email_for(name: str) -> str:
 
 
 def _make_slots(client, doctor_id: str) -> int:
+    """Open upcoming slots for a doctor, skipping any start time already on file
+    (so re-running just fills the gaps instead of duplicating)."""
+    existing = {
+        r["start_time"]
+        for r in client.table("appointment_slots").select("start_time").eq("doctor_id", doctor_id).execute().data
+    }
     rows = []
-    for day in SLOT_DAYS:
+    for day in _upcoming_days():
         for sh, sm, eh, em in SLOT_TIMES:
+            start = f"{day}T{sh:02d}:{sm:02d}:00+00:00"
+            if start in existing:
+                continue
             rows.append({
                 "doctor_id": doctor_id,
-                "start_time": f"{day}T{sh:02d}:{sm:02d}:00+00:00",
+                "start_time": start,
                 "end_time": f"{day}T{eh:02d}:{em:02d}:00+00:00",
             })
-    client.table("appointment_slots").insert(rows).execute()
+    if rows:
+        client.table("appointment_slots").insert(rows).execute()
     return len(rows)
 
 
@@ -89,12 +104,19 @@ def main() -> None:
                 "active": True,
             }).execute().data[0]
 
-            n = _make_slots(client, doctor["id"])
             created_doctors += 1
-            created_slots += n
-            print(f"  + {name} in {dept['name']} ({n} slots)")
+            print(f"  + {name} in {dept['name']}")
 
-    print(f"\nDone. Created {created_doctors} doctors and {created_slots} slots.")
+    # Open upcoming slots for EVERY active doctor (newly created + existing), so
+    # re-running tops up next week's availability without duplicating.
+    all_doctors = client.table("doctors").select("id, name").eq("active", True).execute().data
+    for d in all_doctors:
+        n = _make_slots(client, d["id"])
+        created_slots += n
+        if n:
+            print(f"  ~ {d['name']}: +{n} upcoming slots")
+
+    print(f"\nDone. Created {created_doctors} doctors; opened {created_slots} upcoming slots across {len(all_doctors)} doctors.")
 
 
 if __name__ == "__main__":
