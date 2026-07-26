@@ -16,6 +16,16 @@ AgentCare never diagnoses conditions, interprets results, prescribes medication,
 - **Vanilla JS chat UI** - streaming (typewriter) replies, markdown, conversation history, and document upload (📎).
 - **Full audit trail** - every classification, booking, escalation, and document write is logged.
 
+## Screenshots
+
+Booking a cardiology appointment - the Coordinator routes to Cardiology, the patient picks a slot from the human-in-the-loop picker, and gets a confirmation (with the multi-intent nudge to attach documents):
+
+![Booking flow: routing, slot picker and confirmation](assets/screenshots/booking.png)
+
+Conversational safety in one thread - a greeting, a politely declined medical-advice question, an appointments list, and a genuine emergency being escalated:
+
+![Safety: greeting, medical-advice decline, appointment list, emergency escalation](assets/screenshots/safety.png)
+
 ## Architecture
 
 Five distinct agent roles, orchestrated as one compiled LangGraph `StateGraph` ([`app/agents/graph.py`](app/agents/graph.py)):
