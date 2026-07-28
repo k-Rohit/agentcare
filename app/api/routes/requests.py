@@ -37,17 +37,17 @@ def chat(request: SubmitRequest, current_user: dict = Depends(get_current_user))
     # like "cancel the second one" or "the earlier appointment".
     history = get_chat_messages(conversation_id, limit=HISTORY_LIMIT) if request.conversation_id else []
 
+    # Only this turn's INPUTS. Every per-turn control flag (department, status,
+    # slot_id, delegated_to, routing_note, attach_hint, …) is set/reset by the
+    # coordinator's _turn() — the single source of truth — so we don't reset them
+    # here too. `messages` is passed empty just to initialise the channel on a
+    # brand-new thread; the coordinator clears it each turn with RemoveMessage.
     state = {
         "user_id": current_user["id"],
-        "patient_id": None,
         "workflow_run_id": conversation_id,
         "raw_request": request.message,
         "history": history,
-        "department": None, "department_id": None,
-        "slot_id": None, "appointment_id": None,
-        "escalation_reason": None, "status": "in_progress",
-        "messages": [], "delegated_to": None, "slot_choice": None,
-        "routing_note": None, "attach_hint": False,
+        "messages": [],
         "document_path": request.document_path,
         "document_filename": request.document_filename,
     }
